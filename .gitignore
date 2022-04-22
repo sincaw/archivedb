@@ -1,0 +1,11 @@
+.DS_Store
+
+# ide
+.idea/
+.vscode
+
+# vim
+[._]*.s[a-w][a-z]
+[._]s[a-w][a-z]
+
+
