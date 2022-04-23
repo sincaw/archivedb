@@ -10,11 +10,17 @@ import (
 	"github.com/jialeicui/archivedb/pkg"
 )
 
-type db struct {
-	store *badger.DB
+const (
+	mainBucket = "main"
+	ossBucket  = "oss"
+)
+
+type kv struct {
+	store     *badger.DB
+	main, oss *bucket
 }
 
-func (d *db) Put(item *pkg.Item) error {
+func (d *kv) Put(item *pkg.Item) error {
 	content, err := bson.Marshal(item)
 	if err != nil {
 		return err
@@ -22,33 +28,23 @@ func (d *db) Put(item *pkg.Item) error {
 	tm := time.Now().Unix()
 	key := make([]byte, 8)
 	binary.BigEndian.PutUint64(key, uint64(tm))
-	err = d.store.Update(func(txn *badger.Txn) error {
-		return txn.Set(key, content)
-	})
 
-	return err
+	return d.main.put(key, content)
 }
 
-func (d *db) Find(query pkg.Query) (pkg.Iterator, error) {
-	txn := d.store.NewTransaction(false)
-	iter := txn.NewIterator(badger.DefaultIteratorOptions)
-	return &iterator{
-		db:    d,
-		query: query,
-		txn:   txn,
-		iter:  iter,
-	}, nil
+func (d *kv) Find(query pkg.Query) (pkg.Iterator, error) {
+	return d.main.find(query)
 }
 
-func (d db) Delete(query pkg.Query) error {
+func (d kv) Delete(query pkg.Query) error {
 	return nil
 }
 
-func (d db) Compact() error {
+func (d kv) Compact() error {
 	return d.store.Flatten(1)
 }
 
-func (d db) Close() error {
+func (d kv) Close() error {
 	return d.store.Close()
 }
 
@@ -60,15 +56,23 @@ func New(path string) (pkg.DB, error) {
 		return nil, err
 	}
 
-	return &db{
+	return &kv{
 		store: d,
+		main: &bucket{
+			prefix: append([]byte(mainBucket), '-'),
+			store:  d,
+		},
+		oss: &bucket{
+			prefix: append([]byte(ossBucket), '-'),
+			store:  d,
+		},
 	}, nil
 }
 
 type iterator struct {
-	db    *db
-	query pkg.Query
-	init  bool
+	query  pkg.Query
+	init   bool
+	prefix []byte
 
 	iter *badger.Iterator
 	txn  *badger.Txn
@@ -76,12 +80,12 @@ type iterator struct {
 
 func (i *iterator) Next() bool {
 	if !i.init {
-		i.iter.Rewind()
+		i.iter.Seek(i.prefix)
 		i.init = true
 	} else {
 		i.iter.Next()
 	}
-	return i.iter.Valid()
+	return i.iter.ValidForPrefix(i.prefix)
 }
 
 func (i *iterator) Value() (*pkg.Item, error) {
@@ -104,4 +108,42 @@ func (i *iterator) Release() error {
 	i.iter.Close()
 	i.txn.Discard()
 	return nil
+}
+
+type bucket struct {
+	prefix []byte
+	store  *badger.DB
+}
+
+func (b bucket) key(key []byte) []byte {
+	return append(b.prefix, key...)
+}
+
+func (b *bucket) put(key, val []byte) error {
+	return b.store.Update(func(txn *badger.Txn) error {
+		return txn.Set(b.key(key), val)
+	})
+}
+
+func (b *bucket) get(key []byte) (val []byte, err error) {
+	err = b.store.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(b.key(key))
+		if err != nil {
+			return err
+		}
+		val, err = item.ValueCopy(nil)
+		return err
+	})
+	return
+}
+
+func (b *bucket) find(query pkg.Query) (pkg.Iterator, error) {
+	txn := b.store.NewTransaction(false)
+	iter := txn.NewIterator(badger.DefaultIteratorOptions)
+	return &iterator{
+		query:  query,
+		txn:    txn,
+		iter:   iter,
+		prefix: b.prefix,
+	}, nil
 }
