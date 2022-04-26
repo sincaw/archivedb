@@ -4,11 +4,10 @@ import (
 	"fmt"
 
 	"github.com/jialeicui/archivedb/pkg"
-	"github.com/jialeicui/archivedb/pkg/local"
 )
 
 func main() {
-	d, err := local.New("data")
+	d, err := pkg.New("data")
 	if err != nil {
 		panic(err)
 	}
