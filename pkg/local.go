@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"sync/atomic"
 	"time"
@@ -67,6 +68,15 @@ func (d *kv) Get(key []byte) (*Item, error) {
 	var item = new(Item)
 	err = bson.Unmarshal(val, item)
 	return item, err
+}
+
+func (d *kv) GetResource(prefix []byte, name string) (Resource, error) {
+	key := append(prefix, []byte(name)...)
+	rc, err := d.oss.get(key)
+	if err != nil {
+		return nil, fmt.Errorf("get from db: %v, key %q", err, string(key))
+	}
+	return rc, nil
 }
 
 // TODO use bucket internal func

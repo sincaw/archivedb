@@ -13,6 +13,7 @@ type Resources map[string]Resource
 type DB interface {
 	Put(*Item, ...PutOpt) error
 	Get([]byte) (*Item, error)
+	GetResource([]byte, string) (Resource, error)
 	GetResources([]byte) (Resources, error)
 	Find(Query) (Iterator, error)
 	Delete(Query) error
