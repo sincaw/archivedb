@@ -1,46 +1,69 @@
-import React from 'react';
-import { Stack, Text, Link, FontWeights, IStackTokens, IStackStyles, ITextStyles } from '@fluentui/react';
-import {PrimaryButton} from "@fluentui/react";
-import logo from './logo.svg';
+import React, {useEffect, useState} from 'react';
+import {IStackStyles, IStackTokens, Stack} from '@fluentui/react';
 import './App.css';
+import Card from "./components/Card";
+import axios from "axios";
 
-const boldStyle: Partial<ITextStyles> = { root: { fontWeight: FontWeights.semibold } };
-const stackTokens: IStackTokens = { childrenGap: 15 };
+
+const stackTokens: IStackTokens = {childrenGap: 5};
 const stackStyles: Partial<IStackStyles> = {
   root: {
     width: '960px',
     margin: '0 auto',
-    textAlign: 'center',
     color: '#605e5c',
   },
 };
 
+
 export const App: React.FunctionComponent = () => {
+  const [data, updateData] = useState([]);
+  const [isError, setError] = useState(false);
+  const [isLoading, setLoading] = useState(false);
+  useEffect(() => {
+    async function fetch() {
+      setError(false);
+      setLoading(true);
+      try {
+        const {data} = await axios.get('/list');
+        updateData(data.data);
+      } catch (e) {
+        setError(true);
+      }
+      setLoading(false);
+    }
+
+    fetch()
+  }, [])
+
   return (
-    <Stack horizontalAlign="center" verticalAlign="center" verticalFill styles={stackStyles} tokens={stackTokens}>
-      <img className="App-logo" src={logo} alt="logo" />
-      <PrimaryButton>OK</PrimaryButton>
-      <Text variant="xxLarge" styles={boldStyle}>
-        Welcome to your Fluent UI app
-      </Text>
-      <Text variant="large">For a guide on how to customize this project, check out the Fluent UI documentation.</Text>
-      <Text variant="large" styles={boldStyle}>
-        Essential links
-      </Text>
-      <Stack horizontal tokens={stackTokens} horizontalAlign="center">
-        <Link href="https://developer.microsoft.com/en-us/fluentui#/get-started/web">Docs</Link>
-        <Link href="https://stackoverflow.com/questions/tagged/office-ui-fabric">Stack Overflow</Link>
-        <Link href="https://github.com/microsoft/fluentui/">Github</Link>
-        <Link href="https://twitter.com/fluentui">Twitter</Link>
-      </Stack>
-      <Text variant="large" styles={boldStyle}>
-        Design system
-      </Text>
-      <Stack horizontal tokens={stackTokens} horizontalAlign="center">
-        <Link href="https://developer.microsoft.com/en-us/fluentui#/styles/web/icons">Icons</Link>
-        <Link href="https://developer.microsoft.com/en-us/fluentui#/styles/web">Styles</Link>
-        <Link href="https://aka.ms/themedesigner">Theme designer</Link>
-      </Stack>
+    <Stack horizontalAlign="center" verticalAlign="center" styles={stackStyles} tokens={stackTokens}>
+      {data.filter(item => {
+        if ('retweeted_status' in item) {
+          item = item['retweeted_status']
+        }
+        return item['visible']['list_id'] == 0
+      }).map(item => {
+        if ('retweeted_status' in item) {
+          item = item['retweeted_status']
+        }
+        let images: string[] = []
+        if ('pic_ids' in item) {
+          images = (item['pic_ids'] as string[]).map((id): string => {
+            if (id in item['pic_infos']) {
+              return item['pic_infos'][id]['largest']['url']
+            }
+            return ''
+          }).filter(i => i != '')
+        }
+
+        return <Card
+          author={item['user']['screen_name']}
+          avatar={item['user']['profile_image_url']}
+          date={item['created_at']}
+          content={item['text_raw']}
+          images={images}
+        />
+      })}
     </Stack>
   );
 };
