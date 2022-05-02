@@ -37,7 +37,7 @@ func main() {
 	}
 
 	os.RemoveAll("data")
-	d, err := pkg.New("data")
+	d, err := pkg.New("data", false)
 	if err != nil {
 		panic(err)
 	}

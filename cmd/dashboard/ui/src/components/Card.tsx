@@ -86,7 +86,7 @@ const onRenderCell = (item: string | undefined, index: number | undefined) => {
     >
       <div className={classNames.listGridSizer}>
         <div className={classNames.listGridPadder}>
-          <img src={item} className={classNames.listGridImage} alt=""/>
+          <a href={item} target="_blank"><img src={item} className={classNames.listGridImage} alt=""/></a>
         </div>
       </div>
     </div>
@@ -102,10 +102,7 @@ export default function Card({author, avatar, date, images, content}: ICardProps
 
   return <DocumentCard styles={cardStyles}>
     <DocumentCardActivity activity={date} people={DocumentCardActivityPeople}/>
-    <DocumentCardTitle
-      title={content}
-      showAsSecondaryTitle
-    />
+    <pre style={{whiteSpace: 'pre-wrap', padding: '5px'}}>{content}</pre>
     <List
       style={{padding: 10}}
       items={images}

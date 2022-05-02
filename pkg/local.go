@@ -44,6 +44,9 @@ func (d *kv) Put(item *Item, opt ...PutOpt) error {
 	}
 	key := o.key
 	if key == nil {
+		if o.resources != nil {
+			return fmt.Errorf("key must specified when put with rc")
+		}
 		key = d.generateKey()
 	}
 
@@ -58,6 +61,10 @@ func (d *kv) Put(item *Item, opt ...PutOpt) error {
 	}
 
 	return d.main.put(key, content)
+}
+
+func (d *kv) Exists(key []byte) (bool, error) {
+	return d.main.exists(key)
 }
 
 func (d *kv) Get(key []byte) (*Item, error) {
@@ -113,6 +120,7 @@ func (d kv) Delete(query Query) error {
 }
 
 func (d kv) Compact() error {
+	d.store.Sync()
 	return d.store.Flatten(1)
 }
 
@@ -120,9 +128,13 @@ func (d kv) Close() error {
 	return d.store.Close()
 }
 
-func New(path string) (DB, error) {
+func New(path string, readOnly bool) (DB, error) {
 	opt := badger.DefaultOptions(path)
 	opt.Logger = nil
+	opt.BaseTableSize = 100 << 20
+	opt.BaseLevelSize = (100 << 20) * 10
+	opt.ReadOnly = readOnly
+
 	d, err := badger.Open(opt)
 	if err != nil {
 		return nil, err
@@ -152,7 +164,7 @@ type iterator struct {
 
 func (i *iterator) Next() bool {
 	if !i.init {
-		i.iter.Seek(i.prefix)
+		i.iter.Seek(append(i.prefix, 'F'))
 		i.init = true
 	} else {
 		i.iter.Next()
@@ -213,9 +225,27 @@ func (b *bucket) get(key []byte) (val []byte, err error) {
 	return
 }
 
+func (b *bucket) exists(key []byte) (yes bool, err error) {
+	err = b.store.View(func(txn *badger.Txn) error {
+		_, err := txn.Get(b.key(key))
+		if err != nil {
+			if err == badger.ErrKeyNotFound {
+				yes = false
+				return nil
+			}
+			return err
+		}
+		yes = true
+		return nil
+	})
+	return
+}
+
 func (b *bucket) find(query Query) (Iterator, error) {
 	txn := b.store.NewTransaction(false)
-	iter := txn.NewIterator(badger.DefaultIteratorOptions)
+	opt := badger.DefaultIteratorOptions
+	opt.Reverse = true
+	iter := txn.NewIterator(opt)
 	return &iterator{
 		query:  query,
 		txn:    txn,

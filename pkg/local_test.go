@@ -17,7 +17,7 @@ func newDB() (DB, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	db, err := New(path)
+	db, err := New(path, false)
 
 	return db, func() {
 		defer os.RemoveAll(path)

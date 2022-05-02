@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/jialeicui/archivedb/cmd/dashboard/utils"
 	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/jialeicui/archivedb/pkg"
@@ -19,23 +21,40 @@ var (
 	defaultPageLimit = 20
 )
 
-// TODO support offset
-func ListHandler(w http.ResponseWriter, r *http.Request) {
-	limit := defaultPageLimit
-	vars := r.URL.Query()
-	if v, ok := vars["limit"]; ok {
+const (
+	resourceApiPrefix = "/resource"
+)
+
+func getIntVal(vars url.Values, key string, defaultVal, minVal int) (int, error) {
+	if v, ok := vars[key]; ok {
 		l, err := strconv.Atoi(v[0])
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "%v", err)
-			return
+			return 0, err
+
 		}
-		if l < 1 {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "wrong limit %d", l)
-			return
+		if l < minVal {
+			return 0, fmt.Errorf("wrong limit %d", l)
 		}
-		limit = l
+		return l, nil
+	}
+	return defaultVal, nil
+}
+
+// TODO support offset
+func ListHandler(w http.ResponseWriter, r *http.Request) {
+	vars := r.URL.Query()
+	limit, err := getIntVal(vars, "limit", defaultPageLimit, 1)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, "%v", err)
+		return
+	}
+
+	offset, err := getIntVal(vars, "offset", 0, 0)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, "%v", err)
+		return
 	}
 
 	iter, err := db.Find(pkg.Query{})
@@ -50,7 +69,10 @@ func ListHandler(w http.ResponseWriter, r *http.Request) {
 	count := 0
 	for iter.Next() {
 		count++
-		if count > limit {
+		if count <= offset {
+			continue
+		}
+		if count > (offset + limit) {
 			break
 		}
 		v, err := iter.Value()
@@ -59,6 +81,7 @@ func ListHandler(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "%v", err)
 			return
 		}
+		utils.ReplaceResources(*v, resourceApiPrefix)
 		items = append(items, v)
 	}
 
@@ -93,14 +116,14 @@ func main() {
 	}
 
 	var err error
-	db, err = pkg.New(os.Args[1])
+	db, err = pkg.New(os.Args[1], true)
 	if err != nil {
 		panic(err)
 	}
 
 	r := mux.NewRouter()
 	r.HandleFunc("/list", ListHandler)
-	r.HandleFunc("/resource", ResourceHandler)
+	r.HandleFunc(resourceApiPrefix, ResourceHandler)
 	http.Handle("/", r)
 	srv := &http.Server{
 		Handler:      r,
