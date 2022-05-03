@@ -1,4 +1,4 @@
-import {DocumentCard, DocumentCardActivity, DocumentCardTitle} from "@fluentui/react/lib/DocumentCard";
+import {DocumentCard, DocumentCardActivity} from "@fluentui/react/lib/DocumentCard";
 import {IDocumentCardStyles, List} from "@fluentui/react";
 import React from "react";
 import {getTheme, ITheme, mergeStyleSets} from '@fluentui/react/lib/Styling';
@@ -86,7 +86,7 @@ const onRenderCell = (item: string | undefined, index: number | undefined) => {
     >
       <div className={classNames.listGridSizer}>
         <div className={classNames.listGridPadder}>
-          <a href={item} target="_blank"><img src={item} className={classNames.listGridImage} alt=""/></a>
+          <a href={item} target="_blank" rel="noreferrer"><img src={item} className={classNames.listGridImage} alt=""/></a>
         </div>
       </div>
     </div>

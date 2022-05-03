@@ -1,4 +1,4 @@
-package main
+package sync
 
 import (
 	"bytes"
@@ -9,10 +9,11 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/jialeicui/archivedb/cmd/dashboard/utils"
-	"github.com/jialeicui/archivedb/pkg"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/jialeicui/archivedb/cmd/dashboard/server/utils"
+	"github.com/jialeicui/archivedb/pkg"
 )
 
 type httpCli struct {
@@ -101,8 +102,8 @@ func (h httpCli) FetchLongTextIfNeeded(item pkg.Item) error {
 	}
 
 	type longResp struct {
-		Ok int `json:"ok"`
-		Data struct{
+		Ok   int `json:"ok"`
+		Data struct {
 			LongTextContent string `json:"longTextContent"`
 		} `json:"data"`
 	}

@@ -1,0 +1,9 @@
+syncer:
+  uid: 123456
+  cron: '* * * * *'
+  incrementalMode: true
+  cookie: 'SINAGLOBAL=888888....'
+server:
+  addr: 127.0.0.1:8000
+
+databasePath: .data

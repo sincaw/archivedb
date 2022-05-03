@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/jialeicui/archivedb/pkg"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.uber.org/zap"
+
+	"github.com/jialeicui/archivedb/pkg"
 )
 
 const (
@@ -63,10 +65,14 @@ func FilterResources(item pkg.Item) ([]string, error) {
 
 func ReplaceResources(item pkg.Item, apiPrefix string) error {
 	id := DocId(item)
-	mapResource(item, func(it pkg.Item) error {
+	err := mapResource(item, func(it pkg.Item) error {
 		u := it["url"].(string)
 		it["url"] = fmt.Sprintf("%s?key=%s&name=%s", apiPrefix, id, url.QueryEscape(u))
 		return nil
 	})
-	return nil
+	if err == errNoPic {
+		zap.S().Info("no pic info to replace")
+		err = nil
+	}
+	return err
 }

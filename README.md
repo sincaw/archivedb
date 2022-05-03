@@ -6,36 +6,23 @@
 
 ## archive demo
 
-1. sync favorites weibo
+### run
 
-enter  `cmd/dashboard/sync`
-
-create and edit `.config.yaml`
-
-sample
-
-```yaml
-uid: 123456
-cookie: 'SINAGLOBAL=8xxxxxxx'
+* Enter `cmd/dashboard` folder
+* copy and edit config
+```shell
+cp server/.config.yaml.example server/.config.yaml
+vim server/.config.yaml
+```
+* run
+```shell
+make && make run
 ```
 
-```sh
-go build && ./sync
-```
-
-2. start web server
-
-enter `cmd/dashboard/server`
+### start web ui in dev mode
 
 ```sh
-go run main.go ../sync/.data
-```
-
-
-3. start web ui in dev mode
-
-```sh
-cd cmd/dashboard/ui
+cd ui
 yarn && yarn start
 ```
 
