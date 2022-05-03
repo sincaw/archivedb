@@ -104,6 +104,7 @@ export const App: React.FunctionComponent = () => {
           date={_.get(item, 'created_at', '')}
           content={_.get(item, 'text_raw', '')}
           images={images}
+          video={_.get(item, 'video')}
         />
       })}
     </Stack>

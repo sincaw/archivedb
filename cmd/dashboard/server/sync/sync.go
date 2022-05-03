@@ -80,7 +80,7 @@ func (s *Sync) syncOnce(cli *httpCli) {
 		fmt.Println("done")
 	}()
 
-	for range s.notifyCh {
+	for {
 		fmt.Printf("page %d\n", page)
 		url := fmt.Sprintf("https://weibo.com/ajax/favorites/all_fav?uid=%s&page=%d", s.config.Uid, page)
 		page++
@@ -104,7 +104,7 @@ func (s *Sync) syncOnce(cli *httpCli) {
 			return
 		}
 		for _, i := range items {
-			it := i.(bson.M)
+			it := i.(pkg.Item)
 			key := []byte(utils.DocId(it))
 			yes, err := db.Exists(key)
 			if err != nil {
@@ -131,6 +131,15 @@ func (s *Sync) syncOnce(cli *httpCli) {
 			if err != nil {
 				zap.S().Error(err)
 			}
+
+			video, err := cli.FetchVideoIfNeeded(it)
+			if err != nil {
+				fmt.Printf("fetch video %v\n", err)
+			}
+			if len(video) != 0 {
+				resources[utils.VideoResourceKey] = video
+			}
+
 			err = db.Put(&it,
 				pkg.WithKey(key),
 				pkg.WithResources(resources),

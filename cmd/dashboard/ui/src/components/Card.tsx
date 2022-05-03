@@ -12,6 +12,7 @@ export interface ICardProps {
   date: string
   content: string
   images: string[]
+  video?: string
 }
 
 const cardStyles: Partial<IDocumentCardStyles> = {
@@ -94,7 +95,7 @@ const onRenderCell = (item: string | undefined, index: number | undefined) => {
 }
 
 
-export default function Card({author, avatar, date, images, content}: ICardProps) {
+export default function Card({author, avatar, date, images, content, video}: ICardProps) {
   const DocumentCardActivityPeople = [{
     name: author,
     profileImageSrc: avatar
@@ -108,5 +109,10 @@ export default function Card({author, avatar, date, images, content}: ICardProps
       items={images}
       onRenderCell={onRenderCell}
     />
+    {video ?
+      <video controls width="100%">
+        <source src={video} type="video/mp4"/>
+      </video> : null
+    }
   </DocumentCard>
 }

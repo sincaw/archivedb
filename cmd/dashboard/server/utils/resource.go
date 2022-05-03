@@ -16,6 +16,10 @@ const (
 	originalKey = "original"
 )
 
+const (
+	VideoResourceKey = "video"
+)
+
 var (
 	errNoPic = fmt.Errorf("no pic info")
 )
@@ -30,6 +34,15 @@ func OriginTweet(item pkg.Item) pkg.Item {
 		item = item[retweet].(pkg.Item)
 	}
 	return item
+}
+
+func HasVideo(item pkg.Item) bool {
+	if _, ok := item["page_info"]; ok {
+		if _, ok := item["page_info"].(pkg.Item)["media_info"]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func mapResource(item pkg.Item, fn func(it pkg.Item) error) error {
@@ -63,16 +76,29 @@ func FilterResources(item pkg.Item) ([]string, error) {
 	return rc, err
 }
 
+func LocalResource(prefix, id , name string) string {
+	return fmt.Sprintf("%s?key=%s&name=%s", prefix, id, url.QueryEscape(name))
+}
+
 func ReplaceResources(item pkg.Item, apiPrefix string) error {
 	id := DocId(item)
 	err := mapResource(item, func(it pkg.Item) error {
 		u := it["url"].(string)
-		it["url"] = fmt.Sprintf("%s?key=%s&name=%s", apiPrefix, id, url.QueryEscape(u))
+		it["url"] = LocalResource(apiPrefix, id, u)
 		return nil
 	})
 	if err == errNoPic {
 		zap.S().Info("no pic info to replace")
 		err = nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+
+	if HasVideo(item) {
+		item = OriginTweet(item)
+		item[VideoResourceKey] = LocalResource(apiPrefix, id, VideoResourceKey)
+	}
+
+	return nil
 }

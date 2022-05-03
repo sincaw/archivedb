@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -150,6 +151,7 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 
 func (a *Api) ResourceHandler(w http.ResponseWriter, r *http.Request) {
 	vars := r.URL.Query()
+	isVideo := vars["name"][0] == utils.VideoResourceKey
 	rc, err := a.db.GetResource([]byte(vars["key"][0]), vars["name"][0])
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -157,7 +159,51 @@ func (a *Api) ResourceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Add("Content-Type", "image/jpeg")
-	w.WriteHeader(http.StatusOK)
-	w.Write(rc)
+	// TODO refine partial content parse and response
+	if isVideo {
+		// request range
+		var (
+			re       = regexp.MustCompile("bytes=(\\d+)-(\\d*)")
+			rangeStr = r.Header.Get("range")
+			match    = re.FindStringSubmatch(rangeStr)
+
+			start = 0
+			end   = len(rc) - 1
+		)
+
+		if len(match) != 0 {
+			if len(match) != 3 {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(w, "failed to parse range %q", rangeStr)
+				return
+			}
+			start, err = strconv.Atoi(match[1])
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(w, "failed to parse start %v", err)
+				return
+			}
+			if len(match[2]) > 0 {
+				tmp, err := strconv.Atoi(match[2])
+				if err != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+					fmt.Fprintf(w, "failed to parse end %v", err)
+					return
+				}
+				end = tmp
+			}
+		}
+
+		w.Header().Add("Content-Type", "video/mp4")
+		w.Header().Add("access-control-allow-methods", "GET")
+		w.Header().Add("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(rc)))
+		w.Header().Add("Content-Length", fmt.Sprintf("%d", end-start+1))
+		w.Header().Add("accept-ranges", "bytes")
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(rc[start:end+1])
+	} else {
+		w.Header().Add("Content-Type", "image/jpeg")
+		w.WriteHeader(http.StatusOK)
+		w.Write(rc)
+	}
 }

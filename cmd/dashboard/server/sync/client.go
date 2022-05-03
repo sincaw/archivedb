@@ -116,3 +116,52 @@ func (h httpCli) FetchLongTextIfNeeded(item pkg.Item) error {
 	item["text_raw"] = long.Data.LongTextContent
 	return nil
 }
+
+// FetchVideoIfNeeded try parse video in doc
+// It returns (nil, nil) when there is no video
+// or return video content and nil error
+func (h httpCli) FetchVideoIfNeeded(item pkg.Item) ([]byte, error) {
+	if !utils.HasVideo(item) {
+		return nil, nil
+	}
+
+	item = utils.OriginTweet(item)
+	id, ok := item["mblogid"]
+	if !ok {
+		return nil, fmt.Errorf("no valid mblog id for %q", utils.DocId(item))
+	}
+
+	resp, err := h.Get(fmt.Sprintf("https://weibo.com/ajax/statuses/show?id=%s", id))
+	if err != nil {
+		return nil, err
+	}
+
+	type showResp struct {
+		Ok   int `json:"ok"`
+		PageInfo struct {
+			MediaInfo struct{
+				Mp4HdUrl string `json:"mp4_hd_url"`
+				Mp4720pMp4 string `json:"mp4_720p_mp4"`
+			} `json:"media_info"`
+		} `json:"page_info"`
+	}
+
+	show := new(showResp)
+	err = json.Unmarshal(resp, show)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal fail with context %s, err %v", string(resp), err)
+	}
+	if show.Ok != 1 {
+		return nil, fmt.Errorf("wrong response %+v", show)
+	}
+	url := show.PageInfo.MediaInfo.Mp4720pMp4
+	if url == "" {
+		url = show.PageInfo.MediaInfo.Mp4HdUrl
+	}
+	if url == "" {
+		return nil, fmt.Errorf("can not find video url %q", string(resp))
+	}
+
+	fmt.Printf("fetch video %s\n", url)
+	return h.Get(url)
+}
