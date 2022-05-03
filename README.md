@@ -1,7 +1,7 @@
 # ArchiveDB
 
 
-
+![workflow](https://github.com/jialeicui/archivedb/actions/workflows/go.yml/badge.svg)
 
 
 ## archive demo

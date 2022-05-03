@@ -8,6 +8,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 14
+        cache: yarn
+        cache-dependency-path: cmd/dashboard/ui/yarn.lock
 
     - name: Set up Go
       uses: actions/setup-go@v3
@@ -15,7 +20,7 @@ jobs:
         go-version: 1.17
 
     - name: Build
-      run: go build -v ./...
+      run: cd cmd/dashboard && make
 
     - name: Test
       run: go test -v ./...
