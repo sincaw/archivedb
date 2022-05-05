@@ -10,6 +10,7 @@ import (
 	"path"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -28,7 +29,13 @@ const (
 var Assets embed.FS
 
 type Config struct {
-	Addr string `yaml:"addr"`
+	Addr   string `yaml:"addr"`
+	Filter Filter `yaml:"filter"`
+}
+
+type Filter struct {
+	Word []string `json:"word"`
+	Id   []string `json:"id"`
 }
 
 type Api struct {
@@ -122,18 +129,21 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 	items := bson.A{}
 	count := 0
 	for iter.Next() {
+		v, err := iter.Value()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "%v", err)
+			return
+		}
+		if a.config.Filter.Ignore(*v) {
+			continue
+		}
 		count++
 		if count <= offset {
 			continue
 		}
 		if count > (offset + limit) {
 			break
-		}
-		v, err := iter.Value()
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "%v", err)
-			return
 		}
 		utils.ReplaceResources(*v, resourceApiPrefix)
 		items = append(items, v)
@@ -200,10 +210,38 @@ func (a *Api) ResourceHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Length", fmt.Sprintf("%d", end-start+1))
 		w.Header().Add("accept-ranges", "bytes")
 		w.WriteHeader(http.StatusPartialContent)
-		w.Write(rc[start:end+1])
+		w.Write(rc[start : end+1])
 	} else {
 		w.Header().Add("Content-Type", "image/jpeg")
 		w.WriteHeader(http.StatusOK)
 		w.Write(rc)
 	}
+}
+
+func (f *Filter) Ignore(item pkg.Item) (yes bool) {
+	id := utils.DocId(item)
+	for _, i := range f.Id {
+		if id == i {
+			return true
+		}
+	}
+	if len(f.Word) == 0 {
+		return
+	}
+
+	filterWord := func(t string) bool {
+		for _, w := range f.Word {
+			if strings.Contains(t, w) {
+				return true
+			}
+		}
+		return false
+	}
+
+	if filterWord(utils.TextRaw(item)) {
+		return true
+	}
+
+	// TODO reduce filter action when item is no retweet
+	return filterWord(utils.TextRaw(utils.OriginTweet(item)))
 }

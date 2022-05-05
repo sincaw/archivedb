@@ -13,6 +13,7 @@ export interface ICardProps {
   content: string
   images: string[]
   video?: string
+  id?: string
 }
 
 const cardStyles: Partial<IDocumentCardStyles> = {
@@ -95,14 +96,14 @@ const onRenderCell = (item: string | undefined, index: number | undefined) => {
 }
 
 
-export default function Card({author, avatar, date, images, content, video}: ICardProps) {
+export default function Card({author, avatar, date, images, content, video, id}: ICardProps) {
   const DocumentCardActivityPeople = [{
     name: author,
     profileImageSrc: avatar
   }];
 
   return <DocumentCard styles={cardStyles}>
-    <DocumentCardActivity activity={date} people={DocumentCardActivityPeople}/>
+    <DocumentCardActivity activity={`${date}  -  ${id}`} people={DocumentCardActivityPeople}/>
     <pre style={{whiteSpace: 'pre-wrap', padding: '5px'}}>{content}</pre>
     <List
       style={{padding: 10}}

@@ -105,6 +105,7 @@ export const App: React.FunctionComponent = () => {
           content={_.get(item, 'text_raw', '')}
           images={images}
           video={_.get(item, 'video')}
+          id={_.get(item, 'idstr')}
         />
       })}
     </Stack>

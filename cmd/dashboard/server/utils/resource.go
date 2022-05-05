@@ -29,6 +29,10 @@ func DocId(item pkg.Item) string {
 	return item["idstr"].(string)
 }
 
+func TextRaw(item pkg.Item) string {
+	return item["text_raw"].(string)
+}
+
 func OriginTweet(item pkg.Item) pkg.Item {
 	if _, ok := item[retweet]; ok {
 		item = item[retweet].(pkg.Item)

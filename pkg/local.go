@@ -130,7 +130,6 @@ func (d kv) Close() error {
 
 func New(path string, readOnly bool) (DB, error) {
 	opt := badger.DefaultOptions(path)
-	opt.Logger = nil
 	opt.BaseTableSize = 100 << 20
 	opt.BaseLevelSize = (100 << 20) * 10
 	opt.ReadOnly = readOnly
