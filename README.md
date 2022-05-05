@@ -28,3 +28,4 @@ yarn && yarn start
 
 ![demo](cmd/dashboard/images/demo.png)
 
+favicon from : https://www.iconfont.cn/ outline-archive-tick
