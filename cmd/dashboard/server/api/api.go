@@ -16,8 +16,8 @@ import (
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/jialeicui/archivedb/cmd/dashboard/server/utils"
-	"github.com/jialeicui/archivedb/pkg"
+	"github.com/sincaw/archivedb/cmd/dashboard/server/utils"
+	"github.com/sincaw/archivedb/pkg"
 )
 
 const (

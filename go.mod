@@ -1,4 +1,4 @@
-module github.com/jialeicui/archivedb
+module github.com/sincaw/archivedb
 
 go 1.17
 

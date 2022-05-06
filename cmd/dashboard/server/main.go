@@ -9,10 +9,10 @@ import (
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
-	"github.com/jialeicui/archivedb/cmd/dashboard/server/api"
-	"github.com/jialeicui/archivedb/cmd/dashboard/server/sync"
-	"github.com/jialeicui/archivedb/cmd/dashboard/server/utils"
-	"github.com/jialeicui/archivedb/pkg"
+	"github.com/sincaw/archivedb/cmd/dashboard/server/api"
+	"github.com/sincaw/archivedb/cmd/dashboard/server/sync"
+	"github.com/sincaw/archivedb/cmd/dashboard/server/utils"
+	"github.com/sincaw/archivedb/pkg"
 )
 
 const (

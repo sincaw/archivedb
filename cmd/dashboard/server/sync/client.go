@@ -12,8 +12,8 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/jialeicui/archivedb/cmd/dashboard/server/utils"
-	"github.com/jialeicui/archivedb/pkg"
+	"github.com/sincaw/archivedb/cmd/dashboard/server/utils"
+	"github.com/sincaw/archivedb/pkg"
 )
 
 type httpCli struct {
