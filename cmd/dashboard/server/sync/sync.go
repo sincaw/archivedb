@@ -11,6 +11,7 @@ import (
 	"github.com/sincaw/archivedb/pkg"
 )
 
+
 type Config struct {
 	Uid    string `yaml:"uid"`
 	Cookie string `yaml:"cookie"`
@@ -21,14 +22,14 @@ type Config struct {
 }
 
 type Sync struct {
-	db     pkg.DB
+	ns     pkg.Namespace
 	config Config
 
 	cron     *cron.Cron
 	notifyCh chan struct{}
 }
 
-func New(db pkg.DB, config Config) (*Sync, error) {
+func New(ns pkg.Namespace, config Config) (*Sync, error) {
 	// defaults
 	if config.StartPage < 1 {
 		config.StartPage = 1
@@ -47,7 +48,7 @@ func New(db pkg.DB, config Config) (*Sync, error) {
 	}
 
 	return &Sync{
-		db:     db,
+		ns:     ns,
 		config: config,
 
 		cron:     c,
@@ -73,7 +74,8 @@ func (s *Sync) Start() {
 func (s *Sync) syncOnce(cli *httpCli) {
 	var (
 		page = s.config.StartPage
-		db   = s.db
+		doc  = s.ns.DocBucket()
+		oss  = s.ns.ObjectBucket()
 	)
 
 	defer func() {
@@ -106,7 +108,7 @@ func (s *Sync) syncOnce(cli *httpCli) {
 		for _, i := range items {
 			it := i.(pkg.Item)
 			key := []byte(utils.DocId(it))
-			yes, err := db.Exists(key)
+			yes, err := doc.Exists(key)
 			if err != nil {
 				zap.S().Error(err)
 				return
@@ -122,28 +124,41 @@ func (s *Sync) syncOnce(cli *httpCli) {
 			if err != nil {
 				panic(err)
 			}
-			resources, err := cli.GetImages(urls)
+			images, err := cli.GetImages(urls)
 			if err != nil {
 				panic(err)
+			}
+			for n, img := range images {
+				err = oss.Put([]byte(n), img)
+				if err != nil {
+					panic(err)
+				}
+			}
+
+			// check if video exists to prevent huge network usage
+			yes, err = oss.Exists(key)
+			if err != nil {
+				return
+			}
+			if !yes {
+				video, err := cli.FetchVideoIfNeeded(it)
+				if err != nil {
+					fmt.Printf("fetch video %v\n", err)
+				}
+				if len(video) != 0 {
+					// a tweet has only one video, save video use tweet key
+					err = oss.Put(key, video)
+					if err != nil {
+						panic(err)
+					}
+				}
 			}
 
 			err = cli.FetchLongTextIfNeeded(it)
 			if err != nil {
 				zap.S().Error(err)
 			}
-
-			video, err := cli.FetchVideoIfNeeded(it)
-			if err != nil {
-				fmt.Printf("fetch video %v\n", err)
-			}
-			if len(video) != 0 {
-				resources[utils.VideoResourceKey] = video
-			}
-
-			err = db.Put(&it,
-				pkg.WithKey(key),
-				pkg.WithResources(resources),
-			)
+			err = doc.PutDoc(key, it)
 			if err != nil {
 				panic(err)
 			}

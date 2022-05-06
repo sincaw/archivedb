@@ -39,13 +39,13 @@ type Filter struct {
 }
 
 type Api struct {
-	db     pkg.DB
+	ns     pkg.Namespace
 	config Config
 }
 
-func New(db pkg.DB, config Config) *Api {
+func New(ns pkg.Namespace, config Config) *Api {
 	return &Api{
-		db:     db,
+		ns:     ns,
 		config: config,
 	}
 }
@@ -118,7 +118,7 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	iter, err := a.db.Find(pkg.Query{})
+	iter, err := a.ns.DocBucket().Find(pkg.Query{})
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "%v", err)
@@ -129,13 +129,13 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 	items := bson.A{}
 	count := 0
 	for iter.Next() {
-		v, err := iter.Value()
+		v, err := iter.ValueDoc()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "%v", err)
 			return
 		}
-		if a.config.Filter.Ignore(*v) {
+		if a.config.Filter.Ignore(v) {
 			continue
 		}
 		count++
@@ -145,7 +145,7 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 		if count > (offset + limit) {
 			break
 		}
-		utils.ReplaceResources(*v, resourceApiPrefix)
+		utils.ReplaceResources(v, resourceApiPrefix)
 		items = append(items, v)
 	}
 
@@ -161,8 +161,9 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 
 func (a *Api) ResourceHandler(w http.ResponseWriter, r *http.Request) {
 	vars := r.URL.Query()
-	isVideo := vars["name"][0] == utils.VideoResourceKey
-	rc, err := a.db.GetResource([]byte(vars["key"][0]), vars["name"][0])
+	key := vars["key"][0]
+	isVideo := !strings.HasPrefix(key, "http")
+	rc, err := a.ns.ObjectBucket().Get([]byte(key))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "%v", err)

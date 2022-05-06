@@ -36,29 +36,38 @@ func main() {
 		panic(err)
 	}
 
-	os.RemoveAll("data")
+	_ = os.RemoveAll("data")
 	d, err := pkg.New("data", false)
 	if err != nil {
 		panic(err)
 	}
 	defer d.Close()
 
+	ns, err := d.CreateNamespace([]byte("default"))
+	if err != nil {
+		panic(err)
+	}
+	bucket := ns.DocBucket()
+
+	for _, i := range item["data"].(bson.A) {
+		it := i.(bson.M)
+		err = bucket.PutDoc([]byte(it["idstr"].(string)), it)
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	binaryContent, err := getImage("")
 	if err != nil {
 		panic(err)
 	}
 
-	for _, i := range item["data"].(bson.A) {
-		it := i.(bson.M)
-		err = d.Put(&it,
-			pkg.WithResources(pkg.Resources{"img": binaryContent}),
-			pkg.WithKey([]byte(it["idstr"].(string))),
-		)
-		if err != nil {
-			panic(err)
-		}
+	err = ns.ObjectBucket().Put([]byte("image"), binaryContent)
+	if err != nil {
+		panic(err)
 	}
-	it, err := d.Find(pkg.Query{})
+
+	it, err := bucket.Find(pkg.Query{})
 	if err != nil {
 		panic(err)
 	}

@@ -80,15 +80,15 @@ func FilterResources(item pkg.Item) ([]string, error) {
 	return rc, err
 }
 
-func LocalResource(prefix, id , name string) string {
-	return fmt.Sprintf("%s?key=%s&name=%s", prefix, id, url.QueryEscape(name))
+func LocalResource(prefix, name string) string {
+	return fmt.Sprintf("%s?key=%s", prefix, url.QueryEscape(name))
 }
 
 func ReplaceResources(item pkg.Item, apiPrefix string) error {
 	id := DocId(item)
 	err := mapResource(item, func(it pkg.Item) error {
 		u := it["url"].(string)
-		it["url"] = LocalResource(apiPrefix, id, u)
+		it["url"] = LocalResource(apiPrefix, u)
 		return nil
 	})
 	if err == errNoPic {
@@ -101,7 +101,7 @@ func ReplaceResources(item pkg.Item, apiPrefix string) error {
 
 	if HasVideo(item) {
 		item = OriginTweet(item)
-		item[VideoResourceKey] = LocalResource(apiPrefix, id, VideoResourceKey)
+		item[VideoResourceKey] = LocalResource(apiPrefix, id)
 	}
 
 	return nil
