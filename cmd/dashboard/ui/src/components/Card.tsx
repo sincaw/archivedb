@@ -6,12 +6,17 @@ import {getTheme, ITheme, mergeStyleSets} from '@fluentui/react/lib/Styling';
 const theme: ITheme = getTheme();
 const {palette, fonts} = theme;
 
+export interface IImageProps {
+  thumbnail?: string
+  origin?: string
+}
+
 export interface ICardProps {
   author: string
   avatar: string
   date: string
   content: string
-  images: string[]
+  images: IImageProps[]
   video?: string
   id?: string
 }
@@ -77,7 +82,7 @@ const classNames = mergeStyleSets({
 });
 
 
-const onRenderCell = (item: string | undefined, index: number | undefined) => {
+const onRenderCell = (item: IImageProps | undefined, index: number | undefined) => {
   return (
     <div
       className={classNames.listGridTile}
@@ -88,7 +93,7 @@ const onRenderCell = (item: string | undefined, index: number | undefined) => {
     >
       <div className={classNames.listGridSizer}>
         <div className={classNames.listGridPadder}>
-          <a href={item} target="_blank" rel="noreferrer"><img src={item} className={classNames.listGridImage} alt=""/></a>
+          <a href={item?.origin} target="_blank" rel="noreferrer"><img src={item?.thumbnail} className={classNames.listGridImage} alt=""/></a>
         </div>
       </div>
     </div>

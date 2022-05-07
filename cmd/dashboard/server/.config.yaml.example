@@ -2,8 +2,18 @@ syncer:
   uid: 123456
   cron: '* * * * *'
   incrementalMode: true
+  contentTypes:
+    longText: true
+    thumbnail: true
+    imageQuality: 'best'
+    videoQuality: 'none'
   cookie: 'SINAGLOBAL=888888....'
 server:
   addr: 127.0.0.1:8000
+  filter:
+    word:
+    - foo
+    id:
+    - 1234567890
 
 databasePath: .data

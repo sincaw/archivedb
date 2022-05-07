@@ -63,13 +63,24 @@ func (h *httpCli) Get(url string) ([]byte, error) {
 	return h.do("GET", url, nil)
 }
 
-func (h *httpCli) GetImages(urls []string) (pkg.Resources, error) {
+func (h *httpCli) GetImages(rcs map[string]resource) (pkg.Resources, error) {
+	if len(rcs) == 0 {
+		return nil, nil
+	}
 	var (
-		rc = make(pkg.Resources)
-		mu sync.Mutex
-		eg errgroup.Group
+		rc   = make(pkg.Resources)
+		mu   sync.Mutex
+		eg   errgroup.Group
+		urls = map[string]struct{}{}
 	)
-	for _, url := range urls {
+
+	// get all unique urls
+	for _, i := range rcs {
+		urls[i.Thumb] = struct{}{}
+		urls[i.Origin] = struct{}{}
+	}
+
+	for url := range urls {
 		url := url
 		eg.Go(func() error {
 			resp, err := h.Get(url)
@@ -137,10 +148,10 @@ func (h httpCli) FetchVideoIfNeeded(item pkg.Item) ([]byte, error) {
 	}
 
 	type showResp struct {
-		Ok   int `json:"ok"`
+		Ok       int `json:"ok"`
 		PageInfo struct {
-			MediaInfo struct{
-				Mp4HdUrl string `json:"mp4_hd_url"`
+			MediaInfo struct {
+				Mp4HdUrl   string `json:"mp4_hd_url"`
 				Mp4720pMp4 string `json:"mp4_720p_mp4"`
 			} `json:"media_info"`
 		} `json:"page_info"`
