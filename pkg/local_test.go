@@ -4,89 +4,110 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/require"
 )
 
 const (
 	tempDirPattern = "archive"
+	defaultNS      = "default"
 )
 
-func newDB() (DB, func(), error) {
+func mustNewDB() (db DB, cleanFn func()) {
 	path, err := os.MkdirTemp("", tempDirPattern)
 	if err != nil {
-		return nil, nil, err
+		panic(err)
 	}
-	db, err := New(path, false)
+	db, err = New(path, false)
+	if err != nil {
+		panic(err)
+	}
 
 	return db, func() {
-		defer os.RemoveAll(path)
-		defer db.Close()
-	}, err
-}
-
-func TestLocal(t *testing.T) {
-	db, clean, err := newDB()
-	require.Nil(t, err)
-	defer clean()
-
-	item := &Item{"foo": "bar", "baz": Item{"bar": "foo"}}
-	err = db.Put(item)
-	require.Nil(t, err)
-
-	iter, err := db.Find(Query{})
-	require.Nil(t, err)
-	defer iter.Release()
-
-	// insert a key without bucket prefix
-	ins := db.(*kv)
-	err = ins.store.Update(func(txn *badger.Txn) error {
-		return txn.Set([]byte("foo"), []byte("bar"))
-	})
-	require.Nil(t, err)
-
-	count := 0
-	for iter.Next() {
-		val, err := iter.Value()
-		require.Nil(t, err)
-		require.Equal(t, item, val)
-		count++
+		_ = db.Close()
+		_ = os.RemoveAll(path)
 	}
-	require.Equal(t, 1, count)
 }
 
-func TestPutAndGet(t *testing.T) {
-	db, clean, err := newDB()
-	require.Nil(t, err)
+func TestNamespace(t *testing.T) {
+	db, clean := mustNewDB()
 	defer clean()
 
 	var (
-		key = []byte("foo")
-		val = &Item{"abc": "def"}
+		bucket = []byte("bucket")
+		k      = []byte("foo")
+		v      = []byte("bar")
 	)
-	require.Nil(t, db.Put(val, WithKey(key)))
-	item, err := db.Get(key)
+
+	ns, err := db.CreateNamespace([]byte("name"))
 	require.Nil(t, err)
-	require.Equal(t, val, item)
+	b, err := ns.CreateBucket(bucket)
+	require.Nil(t, err)
+
+	ns2, err := db.CreateNamespace([]byte("another-ns"))
+	require.Nil(t, err)
+	b2, err := ns2.CreateBucket(bucket)
+	require.Nil(t, err)
+
+	require.Nil(t, b.Put(k, v))
+	yes, err := b.Exists(k)
+	require.Nil(t, err)
+	require.True(t, yes)
+
+	// same key can not found in another ns
+	yes, err = b2.Exists(k)
+	require.Nil(t, err)
+	require.False(t, yes)
 }
 
-func TestResources(t *testing.T) {
-	db, clean, err := newDB()
+func mustGetDefaultNamespace(db DB) Namespace {
+	ns, err := db.CreateNamespace([]byte(defaultNS))
+	if err != nil {
+		panic(err)
+	}
+	return ns
+}
+
+func TestBucket(t *testing.T) {
+	db, clean := mustNewDB()
+	defer clean()
+	ns := mustGetDefaultNamespace(db)
+
+	// create bucket with builtin bucket name
+	b, err := ns.CreateBucket([]byte(builtinDocBucketName))
 	require.Nil(t, err)
+
+	var (
+		k = []byte("foo")
+		v = []byte("bar")
+	)
+	require.Nil(t, b.Put(k, v))
+	val, err := b.Get(k)
+	require.Nil(t, err)
+	require.Equal(t, v, val)
+
+	// check builtin bucket
+	for _, b := range []Bucket{ns.DocBucket(), ns.ObjectBucket()} {
+		// expect not found
+		yes, err := b.Exists(k)
+		require.Nil(t, err)
+		require.False(t, yes)
+	}
+}
+
+func TestPutAndGetDoc(t *testing.T) {
+	db, clean := mustNewDB()
 	defer clean()
 
 	var (
-		key       = []byte("foo")
-		val       = &Item{"abc": "def"}
-		resources = Resources{"bar": []byte("baz")}
+		b    = mustGetDefaultNamespace(db).DocBucket()
+		key  = []byte("key1")
+		item = Item{"foo": "bar", "baz": Item{"bar": "foo"}}
 	)
-	require.Nil(t, db.Put(val, WithKey(key), WithResources(resources)))
-	// validate value doc
-	item, err := db.Get(key)
+
+	err := b.PutDoc(key, item)
 	require.Nil(t, err)
-	require.Equal(t, val, item)
-	// validate resources
-	rc, err := db.GetResources(key)
+
+	v, err := b.GetDoc(key)
 	require.Nil(t, err)
-	require.Equal(t, resources, rc)
+	require.Equal(t, item, v)
 }

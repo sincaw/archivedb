@@ -1,122 +1,31 @@
 package pkg
 
 import (
-	"encoding/binary"
-	"fmt"
-	"math"
-	"sync/atomic"
-	"time"
-
+	"encoding/json"
 	"github.com/dgraph-io/badger/v3"
 	"go.mongodb.org/mongo-driver/bson"
+	"sync"
 )
 
 const (
-	mainBucket = "main"
-	ossBucket  = "oss"
+	dbDataPrefix = "d"
+	dbMetaPrefix = "m"
+
+	builtinBucketPrefix = "b"
+	otherBucketPrefix   = "o"
+
+	builtinDocBucketName    = "d"
+	builtinObjectBucketName = "o"
 )
 
 type kv struct {
-	store     *badger.DB
-	main, oss *bucket
-
-	keyCounter uint32
+	sync.Mutex
+	store      *badger.DB
+	namespaces map[string]*ns
 }
 
-func (d *kv) generateKey() []byte {
-	// 0-7: timestamp, 8-11 counter
-	key := make([]byte, 12)
-	tm := time.Now().Unix()
-	binary.BigEndian.PutUint64(key, uint64(tm))
-
-	// TODO make key asc per ms
-	c := atomic.AddUint32(&d.keyCounter, 1)
-	binary.BigEndian.PutUint16(key[8:], uint16(c%math.MaxUint16))
-
-	return key
-}
-
-func (d *kv) Put(item *Item, opt ...PutOpt) error {
-	o := applyPutOpts(opt)
-	content, err := bson.Marshal(item)
-	if err != nil {
-		return err
-	}
-	key := o.key
-	if key == nil {
-		if o.resources != nil {
-			return fmt.Errorf("key must specified when put with rc")
-		}
-		key = d.generateKey()
-	}
-
-	if o.resources != nil {
-		for k, v := range o.resources {
-			ossKey := append(key, []byte(k)...)
-			err := d.oss.put(ossKey, v)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return d.main.put(key, content)
-}
-
-func (d *kv) Exists(key []byte) (bool, error) {
-	return d.main.exists(key)
-}
-
-func (d *kv) Get(key []byte) (*Item, error) {
-	val, err := d.main.get(key)
-	if err != nil {
-		return nil, err
-	}
-	var item = new(Item)
-	err = bson.Unmarshal(val, item)
-	return item, err
-}
-
-func (d *kv) GetResource(prefix []byte, name string) (Resource, error) {
-	key := append(prefix, []byte(name)...)
-	rc, err := d.oss.get(key)
-	if err != nil {
-		return nil, fmt.Errorf("get from db: %v, key %q", err, string(key))
-	}
-	return rc, nil
-}
-
-// TODO use bucket internal func
-func (d *kv) GetResources(prefix []byte) (Resources, error) {
-	var (
-		rc   = make(map[string]Resource)
-		txn  = d.store.NewTransaction(false)
-		iter = txn.NewIterator(badger.DefaultIteratorOptions)
-	)
-	defer txn.Discard()
-	defer iter.Close()
-	prefix = append(d.oss.prefix, prefix...)
-	for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
-		var (
-			item   = iter.Item()
-			orgKey = item.Key()
-			key    = orgKey[len(prefix):]
-		)
-		val, err := item.ValueCopy(nil)
-		if err != nil {
-			return nil, err
-		}
-		rc[string(key)] = val
-	}
-	return rc, nil
-}
-
-func (d *kv) Find(query Query) (Iterator, error) {
-	return d.main.find(query)
-}
-
-func (d kv) Delete(query Query) error {
-	return nil
+type kvMeta struct {
+	Namespaces []string `json:"namespaces"`
 }
 
 func (d kv) Compact() error {
@@ -140,15 +49,195 @@ func New(path string, readOnly bool) (DB, error) {
 	}
 
 	return &kv{
-		store: d,
-		main: &bucket{
-			prefix: append([]byte(mainBucket), '-'),
-			store:  d,
-		},
-		oss: &bucket{
-			prefix: append([]byte(ossBucket), '-'),
-			store:  d,
-		},
+		store:      d,
+		namespaces: map[string]*ns{},
+	}, nil
+}
+
+func putRaw(db *badger.DB, key, val []byte) error {
+	return db.Update(func(txn *badger.Txn) error {
+		return txn.Set(key, val)
+	})
+}
+
+func genKey(ks ...[]byte) []byte {
+	var ret []byte
+	for _, k := range ks {
+		ret = append(ret, k...)
+	}
+	return ret
+}
+
+func (k *kv) CreateNamespace(n []byte) (Namespace, error) {
+	k.Lock()
+	defer k.Unlock()
+
+	name := string(n)
+
+	if n, ok := k.namespaces[name]; ok {
+		return n, nil
+	}
+
+	meta := kvMeta{}
+	for n := range k.namespaces {
+		meta.Namespaces = append(meta.Namespaces, n)
+	}
+	meta.Namespaces = append(meta.Namespaces, name)
+
+	// update meta
+	content, err := json.Marshal(meta)
+	if err != nil {
+		return nil, err
+	}
+	err = putRaw(k.store, []byte(dbMetaPrefix), content)
+	if err != nil {
+		return nil, err
+	}
+
+	ret := newNS(k.store, genKey([]byte(dbDataPrefix), n))
+	k.namespaces[name] = ret
+	return ret, nil
+}
+
+func (k *kv) DeleteNamespace(name []byte) error {
+	panic("implement it")
+}
+
+type ns struct {
+	sync.Mutex
+	store        *badger.DB
+	prefix       []byte
+	doc, obj     *bucket
+	otherBuckets map[string]*bucket
+}
+
+func newNS(store *badger.DB, prefix []byte) *ns {
+	ret := &ns{
+		store:        store,
+		prefix:       prefix,
+		doc:          newBucket(store, genKey(prefix, []byte(builtinBucketPrefix), []byte(builtinDocBucketName))),
+		obj:          newBucket(store, genKey(prefix, []byte(builtinBucketPrefix), []byte(builtinObjectBucketName))),
+		otherBuckets: map[string]*bucket{},
+	}
+	return ret
+}
+
+func (n *ns) CreateBucket(name []byte) (Bucket, error) {
+	n.Lock()
+	defer n.Unlock()
+
+	if b, ok := n.otherBuckets[string(name)]; ok {
+		return b, nil
+	}
+
+	b := newBucket(n.store, genKey(n.prefix, []byte(otherBucketPrefix), name))
+	n.otherBuckets[string(name)] = b
+	return b, nil
+}
+
+func (n *ns) DeleteBucket(name []byte) error {
+	panic("implement it")
+}
+
+func (n *ns) DocBucket() DocBucket {
+	return n.doc
+}
+
+func (n *ns) ObjectBucket() Bucket {
+	return n.obj
+}
+
+type bucket struct {
+	store  *badger.DB
+	prefix []byte
+}
+
+func newBucket(store *badger.DB, prefix []byte) *bucket {
+	return &bucket{
+		store:  store,
+		prefix: prefix,
+	}
+}
+
+func (b *bucket) PutDoc(key []byte, item Item) error {
+	content, err := bson.Marshal(item)
+	if err != nil {
+		return err
+	}
+
+	return b.Put(key, content)
+}
+
+func (b *bucket) GetDoc(key []byte) (Item, error) {
+	val, err := b.Get(key)
+	if err != nil {
+		return nil, err
+	}
+	var item = new(Item)
+	err = bson.Unmarshal(val, item)
+	return *item, err
+}
+
+func (b *bucket) Find(query Query) (DocIterator, error) {
+	return b.find(query)
+}
+
+func (b bucket) key(key []byte) []byte {
+	return append(b.prefix, key...)
+}
+
+func (b *bucket) Put(key, val []byte) error {
+	return b.store.Update(func(txn *badger.Txn) error {
+		return txn.Set(b.key(key), val)
+	})
+}
+
+func (b *bucket) Delete(key []byte) (err error) {
+	panic("implement it")
+}
+
+func (b *bucket) Range(begin, end []byte) (Iterator, error) {
+	panic("implement it")
+}
+
+func (b *bucket) Get(key []byte) (val []byte, err error) {
+	err = b.store.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(b.key(key))
+		if err != nil {
+			return err
+		}
+		val, err = item.ValueCopy(nil)
+		return err
+	})
+	return
+}
+
+func (b *bucket) Exists(key []byte) (yes bool, err error) {
+	err = b.store.View(func(txn *badger.Txn) error {
+		_, err := txn.Get(b.key(key))
+		if err != nil {
+			if err == badger.ErrKeyNotFound {
+				yes = false
+				return nil
+			}
+			return err
+		}
+		yes = true
+		return nil
+	})
+	return
+}
+
+func (b *bucket) find(query Query) (*iterator, error) {
+	txn := b.store.NewTransaction(false)
+	opt := badger.DefaultIteratorOptions
+	opt.Reverse = true
+	iter := txn.NewIterator(opt)
+	return &iterator{
+		query:  query,
+		txn:    txn,
+		iter:   iter,
+		prefix: b.prefix,
 	}, nil
 }
 
@@ -175,7 +264,11 @@ func (i *iterator) Key() ([]byte, error) {
 	return i.iter.Item().Key(), nil
 }
 
-func (i *iterator) Value() (*Item, error) {
+func (i *iterator) Value() ([]byte, error) {
+	return i.iter.Item().ValueCopy(nil)
+}
+
+func (i *iterator) ValueDoc() (Item, error) {
 	var item = new(Item)
 	err := i.iter.Item().Value(func(val []byte) error {
 		return bson.Unmarshal(val, item)
@@ -184,7 +277,7 @@ func (i *iterator) Value() (*Item, error) {
 		return nil, err
 	}
 
-	return item, nil
+	return *item, nil
 }
 
 func (i *iterator) Err() error {
@@ -195,60 +288,4 @@ func (i *iterator) Release() error {
 	i.iter.Close()
 	i.txn.Discard()
 	return nil
-}
-
-type bucket struct {
-	prefix []byte
-	store  *badger.DB
-}
-
-func (b bucket) key(key []byte) []byte {
-	return append(b.prefix, key...)
-}
-
-func (b *bucket) put(key, val []byte) error {
-	return b.store.Update(func(txn *badger.Txn) error {
-		return txn.Set(b.key(key), val)
-	})
-}
-
-func (b *bucket) get(key []byte) (val []byte, err error) {
-	err = b.store.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(b.key(key))
-		if err != nil {
-			return err
-		}
-		val, err = item.ValueCopy(nil)
-		return err
-	})
-	return
-}
-
-func (b *bucket) exists(key []byte) (yes bool, err error) {
-	err = b.store.View(func(txn *badger.Txn) error {
-		_, err := txn.Get(b.key(key))
-		if err != nil {
-			if err == badger.ErrKeyNotFound {
-				yes = false
-				return nil
-			}
-			return err
-		}
-		yes = true
-		return nil
-	})
-	return
-}
-
-func (b *bucket) find(query Query) (Iterator, error) {
-	txn := b.store.NewTransaction(false)
-	opt := badger.DefaultIteratorOptions
-	opt.Reverse = true
-	iter := txn.NewIterator(opt)
-	return &iterator{
-		query:  query,
-		txn:    txn,
-		iter:   iter,
-		prefix: b.prefix,
-	}, nil
 }

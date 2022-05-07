@@ -6,7 +6,7 @@ ui:
 	cd ui && yarn && yarn build
 
 pre-build-api: ui
-	cp -r ui/build server/api/
+	rm -rf server/api/build; cp -r ui/build server/api/
 
 server: pre-build-api
 	cd server && go build

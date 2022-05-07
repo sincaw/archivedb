@@ -17,6 +17,7 @@ import (
 
 const (
 	configFile = ".config.yaml"
+	Namespace  = "weibo"
 )
 
 type Config struct {
@@ -53,12 +54,16 @@ func main() {
 		logger.Sugar().Fatalf("open db fail, path %q, err %v", dbPath, err)
 	}
 	defer db.Close()
+	ns, err := db.CreateNamespace([]byte(Namespace))
+	if err != nil {
+		return
+	}
 
-	syncer, err := sync.New(db, config.Syncer)
+	syncer, err := sync.New(ns, config.Syncer)
 	if err != nil {
 		logger.Sugar().Fatalf("config syncer fail err %v", err)
 	}
 	go syncer.Start()
 
-	logger.Sugar().Fatal(api.New(db, config.Server).Serve())
+	logger.Sugar().Fatal(api.New(ns, config.Server).Serve())
 }
