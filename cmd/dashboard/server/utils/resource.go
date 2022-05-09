@@ -12,7 +12,7 @@ import (
 
 const (
 	retweet     = "retweeted_status"
-	picInfoKey  = "pic_infos"
+	PicInfoKey  = "pic_infos"
 	originalKey = "original"
 )
 
@@ -51,7 +51,7 @@ func HasVideo(item pkg.Item) bool {
 
 func mapResource(item pkg.Item, fn func(it pkg.Item) error) error {
 	item = OriginTweet(item)
-	it, ok := item[picInfoKey]
+	it, ok := item[PicInfoKey]
 	if !ok {
 		return errNoPic
 	}

@@ -11,33 +11,36 @@ import (
 	"github.com/sincaw/archivedb/pkg"
 )
 
-
-type Config struct {
-	Uid    string `yaml:"uid"`
-	Cookie string `yaml:"cookie"`
-	Cron   string `yaml:"cron"`
-
-	StartPage       int  `yaml:"startPage"`
-	IncrementalMode bool `yaml:"incrementalMode"`
-}
-
 type Sync struct {
 	ns     pkg.Namespace
 	config Config
 
+	httpCli  *httpCli
 	cron     *cron.Cron
 	notifyCh chan struct{}
 }
 
 func New(ns pkg.Namespace, config Config) (*Sync, error) {
+	if err := config.ContentTypes.ImageQuality.valid(); err != nil {
+		return nil, err
+	}
+	if err := config.ContentTypes.VideoQuality.valid(); err != nil {
+		return nil, err
+	}
+
 	// defaults
 	if config.StartPage < 1 {
 		config.StartPage = 1
 	}
 
+	cli, err := NewWithHeader(map[string]string{"cookie": config.Cookie})
+	if err != nil {
+		return nil, err
+	}
+
 	notifyCh := make(chan struct{}, 1)
 	c := cron.New()
-	_, err := c.AddFunc(config.Cron, func() {
+	_, err = c.AddFunc(config.Cron, func() {
 		select {
 		case notifyCh <- struct{}{}:
 		default:
@@ -51,6 +54,7 @@ func New(ns pkg.Namespace, config Config) (*Sync, error) {
 		ns:     ns,
 		config: config,
 
+		httpCli:  cli,
 		cron:     c,
 		notifyCh: notifyCh,
 	}, nil
@@ -61,17 +65,13 @@ func (s *Sync) Start() {
 	s.notifyCh <- struct{}{}
 
 	s.cron.Start()
-	cli, err := NewWithHeader(map[string]string{"cookie": s.config.Cookie})
-	if err != nil {
-		panic(err)
-	}
 
 	for range s.notifyCh {
-		s.syncOnce(cli)
+		s.syncOnce()
 	}
 }
 
-func (s *Sync) syncOnce(cli *httpCli) {
+func (s *Sync) syncOnce() {
 	var (
 		page = s.config.StartPage
 		doc  = s.ns.DocBucket()
@@ -86,7 +86,7 @@ func (s *Sync) syncOnce(cli *httpCli) {
 		fmt.Printf("page %d\n", page)
 		url := fmt.Sprintf("https://weibo.com/ajax/favorites/all_fav?uid=%s&page=%d", s.config.Uid, page)
 		page++
-		resp, err := cli.Get(url)
+		resp, err := s.httpCli.Get(url)
 		if err != nil {
 			panic(err)
 		}
@@ -120,11 +120,11 @@ func (s *Sync) syncOnce(cli *httpCli) {
 				zap.S().Infof("skip with key %q", string(key))
 				continue
 			}
-			urls, err := utils.FilterResources(it)
+			urls, err := s.filterResources(it)
 			if err != nil {
 				panic(err)
 			}
-			images, err := cli.GetImages(urls)
+			images, err := s.httpCli.GetImages(urls)
 			if err != nil {
 				panic(err)
 			}
@@ -140,8 +140,9 @@ func (s *Sync) syncOnce(cli *httpCli) {
 			if err != nil {
 				return
 			}
+			yes = true
 			if !yes {
-				video, err := cli.FetchVideoIfNeeded(it)
+				video, err := s.httpCli.FetchVideoIfNeeded(it)
 				if err != nil {
 					fmt.Printf("fetch video %v\n", err)
 				}
@@ -154,14 +155,47 @@ func (s *Sync) syncOnce(cli *httpCli) {
 				}
 			}
 
-			err = cli.FetchLongTextIfNeeded(it)
+			err = s.httpCli.FetchLongTextIfNeeded(it)
 			if err != nil {
 				zap.S().Error(err)
 			}
+			t := utils.OriginTweet(it)
+			t[extraImagesKey] = urls
 			err = doc.PutDoc(key, it)
 			if err != nil {
 				panic(err)
 			}
 		}
 	}
+}
+
+type resource struct {
+	Thumb  string `json:"thumb"`
+	Origin string `json:"origin"`
+}
+
+func (s Sync) filterResources(item pkg.Item) (map[string]resource, error) {
+	item = utils.OriginTweet(item)
+	it, ok := item[utils.PicInfoKey]
+	if !ok {
+		return nil, nil
+	}
+	var (
+		picInfo   = it.(bson.M)
+		imgQ      = s.config.ContentTypes.ImageQuality
+		withThumb = s.config.ContentTypes.Thumbnail
+	)
+
+	ret := map[string]resource{}
+	for key, i := range picInfo {
+		u, tu, err := imgQ.get(i.(pkg.Item), withThumb)
+		if err != nil {
+			return nil, err
+		}
+		ret[key] = resource{
+			Thumb:  tu,
+			Origin: u,
+		}
+	}
+	return ret, nil
 }

@@ -1,7 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {IStackStyles, IStackTokens, Stack} from '@fluentui/react';
 import './App.css';
-import Card from "./components/Card";
+import Card, {IImageProps} from "./components/Card";
 import axios from "axios";
 import _ from "lodash";
 
@@ -63,7 +63,7 @@ export const App: React.FunctionComponent = () => {
   }, [leftPress, currentPage]);
 
   useEffect(() => {
-    const limit = 10
+    const limit = 1
 
     async function fetch() {
       try {
@@ -87,14 +87,18 @@ export const App: React.FunctionComponent = () => {
         if ('retweeted_status' in item) {
           item = item['retweeted_status']
         }
-        let images: string[] = []
-        if ('pic_ids' in item) {
-          images = (item['pic_ids'] as string[]).map((id): string => {
-            if (id in item['pic_infos']) {
-              return item['pic_infos'][id]['original']['url']
+        const extraImageKey = "archiveImages"
+        let images: IImageProps[] = []
+        if ('pic_ids' in item && extraImageKey in item) {
+          images = (item['pic_ids'] as string[]).map((id): IImageProps => {
+            var ret: IImageProps = {}
+            if (id in item[extraImageKey]) {
+              const t = item[extraImageKey][id]
+              ret.thumbnail = `/resource?key=${t['thumb']}`
+              ret.origin = `/resource?key=${t['origin']}`
             }
-            return ''
-          }).filter(i => i !== '')
+            return ret
+          }).filter(i => i.origin !== '')
         }
 
         return <Card
