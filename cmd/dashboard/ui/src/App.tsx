@@ -1,12 +1,21 @@
 import React, {useEffect, useState} from 'react';
-import {IStackStyles, IStackTokens, Stack} from '@fluentui/react';
-import './App.css';
-import Card, {IImageProps} from "./components/Card";
+import {initializeIcons, IStackStyles, IStackTokens, registerIcons, Stack} from '@fluentui/react';
+
 import axios from "axios";
 import _ from "lodash";
+import './App.css';
+import Header from "./components/Header";
+import Card, {IImageProps} from "./components/Card";
+import icons from "./components/Icons";
 
 
-const stackTokens: IStackTokens = {childrenGap: 5};
+const stackTokens: IStackTokens = {};
+const mainStackStyles: Partial<IStackStyles> = {
+  root: {
+    paddingTop: '45px',
+  },
+};
+
 const stackStyles: Partial<IStackStyles> = {
   root: {
     width: '960px',
@@ -14,6 +23,7 @@ const stackStyles: Partial<IStackStyles> = {
     color: '#605e5c',
   },
 };
+
 
 const useKeyPress = function (targetKey: string) {
   const [keyPressed, setKeyPressed] = useState(false);
@@ -43,12 +53,16 @@ const useKeyPress = function (targetKey: string) {
   return keyPressed;
 };
 
+
 export const App: React.FunctionComponent = () => {
   const rightPress = useKeyPress("ArrowRight");
   const leftPress = useKeyPress("ArrowLeft");
 
   const [data, updateData] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
+
+  registerIcons(icons);
+  initializeIcons();
 
   useEffect(() => {
     if (rightPress) {
@@ -63,7 +77,7 @@ export const App: React.FunctionComponent = () => {
   }, [leftPress, currentPage]);
 
   useEffect(() => {
-    const limit = 1
+    const limit = 10
 
     async function fetch() {
       try {
@@ -77,41 +91,44 @@ export const App: React.FunctionComponent = () => {
   }, [currentPage])
 
   return (
-    <Stack horizontalAlign="center" verticalAlign="center" styles={stackStyles} tokens={stackTokens}>
-      {data.filter(item => {
-        if ('retweeted_status' in item) {
-          item = item['retweeted_status']
-        }
-        return item['visible']['list_id'] === 0
-      }).map(item => {
-        if ('retweeted_status' in item) {
-          item = item['retweeted_status']
-        }
-        const extraImageKey = "archiveImages"
-        let images: IImageProps[] = []
-        if ('pic_ids' in item && extraImageKey in item) {
-          images = (item['pic_ids'] as string[]).map((id): IImageProps => {
-            var ret: IImageProps = {}
-            if (id in item[extraImageKey]) {
-              const t = item[extraImageKey][id]
-              ret.thumbnail = `/resource?key=${t['thumb']}`
-              ret.origin = `/resource?key=${t['origin']}`
-            }
-            return ret
-          }).filter(i => i.origin !== '')
-        }
+    <Stack tokens={stackTokens} styles={mainStackStyles}>
+      <Header/>
+      <Stack horizontalAlign="center" styles={stackStyles}>
+        {data.filter(item => {
+          if ('retweeted_status' in item) {
+            item = item['retweeted_status']
+          }
+          return item['visible']['list_id'] === 0
+        }).map(item => {
+          if ('retweeted_status' in item) {
+            item = item['retweeted_status']
+          }
+          const extraImageKey = "archiveImages"
+          let images: IImageProps[] = []
+          if ('pic_ids' in item && extraImageKey in item) {
+            images = (item['pic_ids'] as string[]).map((id): IImageProps => {
+              var ret: IImageProps = {}
+              if (id in item[extraImageKey]) {
+                const t = item[extraImageKey][id]
+                ret.thumbnail = `/resource?key=${t['thumb']}`
+                ret.origin = `/resource?key=${t['origin']}`
+              }
+              return ret
+            }).filter(i => i.origin !== '')
+          }
 
-        return <Card
-          key={_.get(item, 'idstr', '')}
-          author={_.get(item, 'user.screen_name', '')}
-          avatar={_.get(item, 'user.profile_image_url', '')}
-          date={_.get(item, 'created_at', '')}
-          content={_.get(item, 'text_raw', '')}
-          images={images}
-          video={_.get(item, 'video')}
-          id={_.get(item, 'idstr')}
-        />
-      })}
+          return <Card
+            key={_.get(item, 'idstr', '')}
+            author={_.get(item, 'user.screen_name', '')}
+            avatar={_.get(item, 'user.profile_image_url', '')}
+            date={_.get(item, 'created_at', '')}
+            content={_.get(item, 'text_raw', '')}
+            images={images}
+            video={_.get(item, 'video')}
+            id={_.get(item, 'idstr')}
+          />
+        })}
+      </Stack>
     </Stack>
   );
 };
