@@ -1,8 +1,45 @@
 import React from "react";
 import {CommandBar, FontIcon, ICommandBarItemProps, IStackStyles, mergeStyles, Stack} from "@fluentui/react";
+import {useNavigate} from "react-router-dom";
 
 
 export default function Header() {
+  const navigate = useNavigate();
+  const _farItems: ICommandBarItemProps[] = [
+    {
+      key: 'setting',
+      text: 'Setting',
+      // This needs an ariaLabel since it's icon-only
+      ariaLabel: 'Setting',
+      iconOnly: true,
+      iconProps: {iconName: 'Settings'},
+      onClick: () => navigate('/settings'),
+    },
+  ];
+
+  const _items: ICommandBarItemProps[] = [
+    {
+      key: 'weibo',
+      text: 'Weibo',
+      iconProps: {iconName: 'weibo'},
+      onRenderIcon: (icon) => {
+        return <FontIcon aria-label="Weibo" iconName="weibo" className={highLightIcon}/>
+      },
+      onClick: () => navigate('/')
+    },
+    {
+      key: 'zhihu',
+      text: 'Zhihu',
+      iconProps: {iconName: 'zhihu'},
+      onClick: () => console.log('Zhihu'),
+    }, {
+      key: 'twitter',
+      text: 'Twitter',
+      iconProps: {iconName: 'twitter'},
+      onClick: () => console.log('twitter'),
+    },
+  ];
+
   return <Stack styles={headerStackStyles}>
     <Stack horizontalAlign='center'>
       <CommandBar
@@ -14,40 +51,6 @@ export default function Header() {
   </Stack>
 }
 
-const _items: ICommandBarItemProps[] = [
-  {
-    key: 'weibo',
-    text: 'Weibo',
-    iconProps: {iconName: 'weibo'},
-    onRenderIcon: (icon) => {
-      return <FontIcon aria-label="OneDrive logo" iconName="weibo" className={highLightIcon}/>
-    },
-    onClick: () => console.log('Share'),
-  },
-  {
-    key: 'zhihu',
-    text: 'Zhihu',
-    iconProps: {iconName: 'zhihu'},
-    onClick: () => console.log('Zhihu'),
-  }, {
-    key: 'twitter',
-    text: 'Twitter',
-    iconProps: {iconName: 'twitter'},
-    onClick: () => console.log('twitter'),
-  },
-];
-
-const _farItems: ICommandBarItemProps[] = [
-  {
-    key: 'setting',
-    text: 'Setting',
-    // This needs an ariaLabel since it's icon-only
-    ariaLabel: 'Setting',
-    iconOnly: true,
-    iconProps: {iconName: 'Settings'},
-    onClick: () => console.log('Info'),
-  },
-];
 
 const headerStackStyles: Partial<IStackStyles> = {
   root: {
