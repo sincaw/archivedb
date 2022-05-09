@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sincaw/archivedb/cmd/dashboard/server/api"
+	"github.com/sincaw/archivedb/cmd/dashboard/server/common"
 	"github.com/sincaw/archivedb/cmd/dashboard/server/sync"
 	"github.com/sincaw/archivedb/cmd/dashboard/server/utils"
 	"github.com/sincaw/archivedb/pkg"
@@ -19,13 +20,6 @@ const (
 	configFile = ".config.yaml"
 	Namespace  = "weibo"
 )
-
-type Config struct {
-	Syncer sync.Config `yaml:"syncer"`
-	Server api.Config  `yaml:"server"`
-
-	DatabasePath string `yaml:"databasePath"`
-}
 
 func main() {
 	flag.Parse()
@@ -39,7 +33,7 @@ func main() {
 	if err != nil {
 		logger.Sugar().Fatalf("read config file fail %v", err)
 	}
-	config := new(Config)
+	config := new(common.Config)
 	err = yaml.Unmarshal(content, config)
 	if err != nil {
 		logger.Sugar().Fatalf("parse config file fail %v", err)
