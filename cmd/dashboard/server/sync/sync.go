@@ -7,24 +7,26 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.uber.org/zap"
 
+	"github.com/sincaw/archivedb/cmd/dashboard/server/common"
 	"github.com/sincaw/archivedb/cmd/dashboard/server/utils"
 	"github.com/sincaw/archivedb/pkg"
 )
 
 type Sync struct {
 	ns     pkg.Namespace
-	config Config
+	config common.SyncerConfig
 
 	httpCli  *httpCli
 	cron     *cron.Cron
 	notifyCh chan struct{}
 }
 
-func New(ns pkg.Namespace, config Config) (*Sync, error) {
-	if err := config.ContentTypes.ImageQuality.valid(); err != nil {
+// New Sync instance with db ns and its configuration
+func New(ns pkg.Namespace, config common.SyncerConfig) (*Sync, error) {
+	if err := config.ContentTypes.ImageQuality.Valid(); err != nil {
 		return nil, err
 	}
-	if err := config.ContentTypes.VideoQuality.valid(); err != nil {
+	if err := config.ContentTypes.VideoQuality.Valid(); err != nil {
 		return nil, err
 	}
 
@@ -72,11 +74,7 @@ func (s *Sync) Start() {
 }
 
 func (s *Sync) syncOnce() {
-	var (
-		page = s.config.StartPage
-		doc  = s.ns.DocBucket()
-		oss  = s.ns.ObjectBucket()
-	)
+	page := s.config.StartPage
 
 	defer func() {
 		fmt.Println("done")
@@ -107,66 +105,81 @@ func (s *Sync) syncOnce() {
 		}
 		for _, i := range items {
 			it := i.(pkg.Item)
-			key := []byte(utils.DocId(it))
-			yes, err := doc.Exists(key)
+			stop, err := s.saveTweet(it)
 			if err != nil {
 				zap.S().Error(err)
 				return
 			}
-			if yes {
-				if s.config.IncrementalMode {
-					return
-				}
-				zap.S().Infof("skip with key %q", string(key))
-				continue
-			}
-			urls, err := s.filterResources(it)
-			if err != nil {
-				panic(err)
-			}
-			images, err := s.httpCli.GetImages(urls)
-			if err != nil {
-				panic(err)
-			}
-			for n, img := range images {
-				err = oss.Put([]byte(n), img)
-				if err != nil {
-					panic(err)
-				}
-			}
-
-			// check if video exists to prevent huge network usage
-			yes, err = oss.Exists(key)
-			if err != nil {
+			if stop {
 				return
-			}
-			yes = true
-			if !yes {
-				video, err := s.httpCli.FetchVideoIfNeeded(it)
-				if err != nil {
-					fmt.Printf("fetch video %v\n", err)
-				}
-				if len(video) != 0 {
-					// a tweet has only one video, save video use tweet key
-					err = oss.Put(key, video)
-					if err != nil {
-						panic(err)
-					}
-				}
-			}
-
-			err = s.httpCli.FetchLongTextIfNeeded(it)
-			if err != nil {
-				zap.S().Error(err)
-			}
-			t := utils.OriginTweet(it)
-			t[extraImagesKey] = urls
-			err = doc.PutDoc(key, it)
-			if err != nil {
-				panic(err)
 			}
 		}
 	}
+}
+
+// saveTweet save doc(it) and its media resources (images, video)
+func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
+	var (
+		doc = s.ns.DocBucket()
+		oss = s.ns.ObjectBucket()
+	)
+
+	key := []byte(utils.DocId(it))
+	yes, err := doc.Exists(key)
+	if err != nil {
+		return
+	}
+	if yes {
+		if s.config.IncrementalMode {
+			return true, nil
+		}
+		zap.S().Infof("skip with key %q", string(key))
+		return
+	}
+	urls, err := s.filterImageResources(it)
+	if err != nil {
+		panic(err)
+	}
+	images, err := s.httpCli.GetImages(urls)
+	if err != nil {
+		return
+	}
+	for n, img := range images {
+		err = oss.Put([]byte(n), img)
+		if err != nil {
+			return
+		}
+	}
+
+	// check if video exists to prevent huge network usage
+	yes, err = oss.Exists(key)
+	if err != nil {
+		return
+	}
+
+	if !yes {
+		video, err := s.httpCli.FetchVideoIfNeeded(it)
+		if err != nil {
+			fmt.Printf("fetch video %v\n", err)
+		}
+		if len(video) != 0 {
+			// a tweet has only one video, save video use tweet key
+			err = oss.Put(key, video)
+			if err != nil {
+				return false, err
+			}
+		}
+	}
+
+	err = s.httpCli.FetchLongTextIfNeeded(it)
+	if err != nil {
+		zap.S().Error(err)
+	}
+	t := utils.OriginTweet(it)
+	t[common.ExtraImagesKey] = urls
+	err = doc.PutDoc(key, it)
+
+	return
 }
 
 type resource struct {
@@ -174,7 +187,8 @@ type resource struct {
 	Origin string `json:"origin"`
 }
 
-func (s Sync) filterResources(item pkg.Item) (map[string]resource, error) {
+// filterImageResources get image urls using config rule
+func (s Sync) filterImageResources(item pkg.Item) (map[string]resource, error) {
 	item = utils.OriginTweet(item)
 	it, ok := item[utils.PicInfoKey]
 	if !ok {
@@ -188,7 +202,7 @@ func (s Sync) filterResources(item pkg.Item) (map[string]resource, error) {
 
 	ret := map[string]resource{}
 	for key, i := range picInfo {
-		u, tu, err := imgQ.get(i.(pkg.Item), withThumb)
+		u, tu, err := imgQ.Get(i.(pkg.Item), withThumb)
 		if err != nil {
 			return nil, err
 		}
