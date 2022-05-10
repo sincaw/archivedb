@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/dgraph-io/badger/v3 v3.2103.2
+	github.com/evanphx/json-patch/v5 v5.6.0
 	github.com/gorilla/mux v1.8.0
 	github.com/robfig/cron/v3 v3.0.0
 	github.com/stretchr/testify v1.7.1

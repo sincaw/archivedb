@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/robfig/cron/v3"
@@ -13,6 +14,7 @@ import (
 )
 
 type Sync struct {
+	ctx    context.Context
 	ns     pkg.Namespace
 	config common.SyncerConfig
 
@@ -22,7 +24,7 @@ type Sync struct {
 }
 
 // New Sync instance with db ns and its configuration
-func New(ns pkg.Namespace, config common.SyncerConfig) (*Sync, error) {
+func New(ctx context.Context, ns pkg.Namespace, config common.SyncerConfig) (*Sync, error) {
 	if err := config.ContentTypes.ImageQuality.Valid(); err != nil {
 		return nil, err
 	}
@@ -53,6 +55,7 @@ func New(ns pkg.Namespace, config common.SyncerConfig) (*Sync, error) {
 	}
 
 	return &Sync{
+		ctx:    ctx,
 		ns:     ns,
 		config: config,
 
@@ -67,9 +70,15 @@ func (s *Sync) Start() {
 	s.notifyCh <- struct{}{}
 
 	s.cron.Start()
+	defer s.cron.Stop()
 
-	for range s.notifyCh {
-		s.syncOnce()
+	for {
+		select {
+		case <-s.notifyCh:
+			s.syncOnce()
+		case <-s.ctx.Done():
+			return
+		}
 	}
 }
 

@@ -96,7 +96,7 @@ const Weibo: React.FunctionComponent = () => {
 
     async function fetch() {
       try {
-        const {data} = await axios.get(`/list?limit=${limit}&offset=${(currentPage - 1) * limit}`);
+        const {data} = await axios.get(`/api/list?limit=${limit}&offset=${(currentPage - 1) * limit}`);
         updateData(data.data);
       } catch (e) {
       }
@@ -121,8 +121,8 @@ const Weibo: React.FunctionComponent = () => {
           var ret: IImageProps = {}
           if (id in item[extraImageKey]) {
             const t = item[extraImageKey][id]
-            ret.thumbnail = `/resource?key=${t['thumb']}`
-            ret.origin = `/resource?key=${t['origin']}`
+            ret.thumbnail = `/api/resource?key=${t['thumb']}`
+            ret.origin = `/api/resource?key=${t['origin']}`
           }
           return ret
         }).filter(i => i.origin !== '')

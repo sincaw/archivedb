@@ -59,8 +59,7 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 
 	iter, err := a.ns.DocBucket().Find(pkg.Query{})
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "%v", err)
+		responseServerError(w, err)
 		return
 	}
 	defer iter.Release()
@@ -70,11 +69,10 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 	for iter.Next() {
 		v, err := iter.ValueDoc()
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "%v", err)
+			responseServerError(w, err)
 			return
 		}
-		if a.config.Filter.Ignore(v) {
+		if a.config.Server.Filter.Ignore(v) {
 			continue
 		}
 		count++
@@ -90,8 +88,7 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 
 	content, err := bson.MarshalExtJSON(bson.M{"data": items}, false, true)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "%v", err)
+		responseServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -106,8 +103,7 @@ func (a *Api) ResourceHandler(w http.ResponseWriter, r *http.Request) {
 	isVideo := !strings.HasPrefix(key, "http")
 	rc, err := a.ns.ObjectBucket().Get([]byte(key))
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "%v", err)
+		responseServerError(w, err)
 		return
 	}
 
@@ -125,21 +121,18 @@ func (a *Api) ResourceHandler(w http.ResponseWriter, r *http.Request) {
 
 		if len(match) != 0 {
 			if len(match) != 3 {
-				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintf(w, "failed to parse range %q", rangeStr)
+				responseServerError(w, fmt.Errorf("failed to parse range %q", rangeStr))
 				return
 			}
 			start, err = strconv.Atoi(match[1])
 			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintf(w, "failed to parse start %v", err)
+				responseServerError(w, fmt.Errorf("failed to parse start %v", err))
 				return
 			}
 			if len(match[2]) > 0 {
 				tmp, err := strconv.Atoi(match[2])
 				if err != nil {
-					w.WriteHeader(http.StatusInternalServerError)
-					fmt.Fprintf(w, "failed to parse end %v", err)
+					responseServerError(w, fmt.Errorf("failed to parse end %v", err))
 					return
 				}
 				end = tmp
