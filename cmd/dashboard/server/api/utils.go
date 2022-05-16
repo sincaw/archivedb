@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 )
@@ -20,4 +21,9 @@ func getIntVal(vars url.Values, key string, defaultVal, minVal int) (int, error)
 		return l, nil
 	}
 	return defaultVal, nil
+}
+
+func responseServerError(w http.ResponseWriter, err error) {
+	w.WriteHeader(http.StatusInternalServerError)
+	fmt.Fprintf(w, "%v", err)
 }

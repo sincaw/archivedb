@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"io/ioutil"
 	"path"
 	"path/filepath"
+	"sync/atomic"
 
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
@@ -53,11 +55,37 @@ func main() {
 		return
 	}
 
-	syncer, err := sync.New(ns, config.Syncer)
-	if err != nil {
-		logger.Sugar().Fatalf("config syncer fail err %v", err)
-	}
-	go syncer.Start()
+	var (
+		reloadCh = make(chan struct{}, 1)
+		reload   = int32(0)
+	)
+	config.OnChange(func(common.Config) error {
+		select {
+		case reloadCh <- struct{}{}:
+		default:
+		}
+		return nil
+	})
 
-	logger.Sugar().Fatal(api.New(ns, config.Server).Serve())
+	for {
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			for range reloadCh {
+				atomic.StoreInt32(&reload, 1)
+				cancel()
+				return
+			}
+		}()
+
+		syncer, err := sync.New(ctx, ns, config.Syncer)
+		if err != nil {
+			logger.Sugar().Fatalf("config syncer fail err %v", err)
+		}
+		go syncer.Start()
+
+		err = api.New(ctx, ns, config).Serve()
+		if !atomic.CompareAndSwapInt32(&reload, 1, 0) {
+			zap.S().Error(err)
+		}
+	}
 }

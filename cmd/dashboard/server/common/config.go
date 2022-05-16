@@ -14,55 +14,70 @@ const (
 
 // Config for dashboard server behavior
 type Config struct {
-	Syncer SyncerConfig    `yaml:"syncer"`
-	Server WebServerConfig `yaml:"server"`
+	Syncer SyncerConfig    `yaml:"syncer" json:"syncer"`
+	Server WebServerConfig `yaml:"server" json:"server"`
 
-	DatabasePath string `yaml:"databasePath"`
+	DatabasePath string `yaml:"databasePath" json:"-"`
+
+	onChange func(Config) error
+}
+
+// TODO make onChange call before update data to verify configuration
+// Update updates self data trigger onChange function
+func (c *Config) Update(conf Config) error {
+	conf.onChange = c.onChange
+	*c = conf
+	return c.onChange(conf)
+}
+
+// OnChange sets callback function
+func (c *Config) OnChange(fn func(conf Config) error) {
+	c.onChange = fn
 }
 
 // ContentTypes for content fetching behavior
 type ContentTypes struct {
 	// fetch long tweet if LongText set to true
-	LongText bool `yaml:"longText"`
+	LongText bool `yaml:"longText" json:"longText"`
 	// fetch thumbnail for web ui if Thumbnail set to true
-	Thumbnail bool `yaml:"thumbnail"`
+	Thumbnail bool `yaml:"thumbnail" json:"thumbnail"`
 	// images fetching quality, available options: best, large, middle, none
-	ImageQuality ImageQuality `yaml:"imageQuality"`
+	ImageQuality ImageQuality `yaml:"imageQuality" json:"imageQuality"`
 	// videos fetching quality, available options: best, 720p, 360p, none
-	VideoQuality VideoQuality `yaml:"videoQuality"`
+	VideoQuality VideoQuality `yaml:"videoQuality" json:"videoQuality"`
 }
 
 // SyncerConfig for sync task
 type SyncerConfig struct {
 	// weibo uid
-	Uid string `yaml:"uid"`
+	Uid string `yaml:"uid" json:"uid"`
 	// weibo cookie
-	Cookie string `yaml:"cookie"`
+	Cookie string `yaml:"cookie" json:"cookie"`
 	// crontab like string, for sync job run schedule
-	Cron string `yaml:"cron"`
+	Cron string `yaml:"cron" json:"cron"`
 
 	// starting page for sync job
-	StartPage int `yaml:"startPage"`
+	StartPage int `yaml:"startPage" json:"startPage"`
 	// sync job stops immediately when it meets existing tweet id when IncrementalMode set to true
-	IncrementalMode bool `yaml:"incrementalMode"`
+	IncrementalMode bool `yaml:"incrementalMode" json:"incrementalMode"`
 	// content fetching behavior
-	ContentTypes ContentTypes `yaml:"contentTypes"`
+	ContentTypes ContentTypes `yaml:"contentTypes" json:"contentTypes"`
 }
 
 // WebServerConfig for api server
 type WebServerConfig struct {
 	// web serving address (ip:port)
-	Addr string `yaml:"addr"`
+	Addr string `yaml:"addr" json:"addr"`
 	// list api filter
-	Filter Filter `yaml:"filter"`
+	Filter Filter `yaml:"filter" json:"filter"`
 }
 
 // Filter configuration for list handler
 type Filter struct {
 	// list won't return it if the tweet containers word in filter word list
-	Word []string `json:"word"`
+	Word []string `json:"word" json:"word"`
 	// list won't return it if the tweet id in filter id list
-	Id []string `json:"id"`
+	Id []string `json:"id" json:"id"`
 }
 
 type ImageQuality string
@@ -88,20 +103,19 @@ func (q ImageQuality) Valid() error {
 	return fmt.Errorf("invalid image quality %q", q)
 }
 
-/* Get image url, input item structure
-{
-  "thumbnail": {
-	"url": "https://xxxx.jpg",
-	"width": 1,
-	"height": 2,
-  },
-  "bmiddle": {},
-  "large": {},
-  "original": {},
-  "largest": {},
-  "mw2000": {},
-}
-*/
+// Get image url, input item structure
+//{
+//	"thumbnail": {
+//		"url": "https://xxxx.jpg",
+//		"width": 1,
+//		"height": 2,
+//	},
+//	"bmiddle": {},
+//	"large": {},
+//	"original": {},
+//	"largest": {},
+//	"mw2000": {},
+//}
 func (q ImageQuality) Get(item pkg.Item, withThumb bool) (url, thumbUrl string, err error) {
 	if withThumb {
 		// bmiddle as thumbnail (thumbnail is too small to display)
