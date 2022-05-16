@@ -1,6 +1,6 @@
-import React, {useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {initializeIcons, IStackStyles, IStackTokens, registerIcons, Stack} from '@fluentui/react';
-import {Route, Routes} from "react-router-dom";
+import {Route, Routes, useSearchParams} from "react-router-dom";
 
 import axios from "axios";
 import _ from "lodash";
@@ -71,39 +71,53 @@ export const App: React.FunctionComponent = () => {
   );
 };
 
-
 const Weibo: React.FunctionComponent = () => {
   const rightPress = useKeyPress("ArrowRight");
   const leftPress = useKeyPress("ArrowLeft");
 
   const [data, updateData] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const pageKey = 'page'
+  const getCurrentPage = useCallback(
+    () => (parseInt(searchParams.get(pageKey)!) || 1),
+    [searchParams])
 
   useEffect(() => {
     if (rightPress) {
-      setCurrentPage(p => p + 1)
+      const p = getCurrentPage() + 1
+      setSearchParams({page: p.toString()})
     }
-  }, [rightPress]);
+  }, [rightPress, getCurrentPage, setSearchParams]);
 
   useEffect(() => {
-    if (leftPress && currentPage > 1) {
-      setCurrentPage(p => p - 1)
+    if (leftPress) {
+      let p = getCurrentPage() - 1
+      p = p < 1 ? 1 : p
+      setSearchParams({page: p.toString()})
     }
-  }, [leftPress, currentPage]);
+  }, [leftPress, getCurrentPage, setSearchParams]);
+
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [data])
+
 
   useEffect(() => {
     const limit = 10
+    const p = getCurrentPage()
 
     async function fetch() {
       try {
-        const {data} = await axios.get(`/api/list?limit=${limit}&offset=${(currentPage - 1) * limit}`);
+        const {data} = await axios.get(`/api/list?limit=${limit}&offset=${(p - 1) * limit}`);
         updateData(data.data);
       } catch (e) {
       }
     }
 
     fetch()
-  }, [currentPage])
+  }, [searchParams, getCurrentPage])
+
   return <Stack horizontalAlign="center" styles={stackStyles}>
     {data.filter(item => {
       if ('retweeted_status' in item) {
