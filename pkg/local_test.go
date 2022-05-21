@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -110,4 +111,73 @@ func TestPutAndGetDoc(t *testing.T) {
 	v, err := b.GetDoc(key)
 	require.Nil(t, err)
 	require.Equal(t, item, v)
+}
+
+func TestDeleteByKey(t *testing.T) {
+	db, clean := mustNewDB()
+	defer clean()
+
+	var (
+		key          = []byte("foo")
+		val          = []byte("bar")
+		keyNotExists = []byte("baz")
+		b            = mustGetDefaultNamespace(db).DocBucket()
+	)
+	require.Nil(t, b.Put(key, val))
+	require.Nil(t, b.Delete(keyNotExists))
+	require.Nil(t, b.Delete(key))
+	v, err := b.Get(key)
+	require.Equal(t, badger.ErrKeyNotFound, err)
+	require.Nil(t, v)
+}
+
+func TestDeleteByBucket(t *testing.T) {
+	db, clean := mustNewDB()
+	defer clean()
+
+	var (
+		key    = []byte("foo")
+		val    = []byte("bar")
+		bucket = []byte("baz")
+		ns     = mustGetDefaultNamespace(db)
+		doc    = ns.DocBucket()
+	)
+
+	b, err := ns.CreateBucket(bucket)
+	require.Nil(t, err)
+	require.Nil(t, b.Put(key, val))
+	require.Nil(t, doc.Put(key, val))
+
+	require.Nil(t, ns.DeleteBucket(bucket))
+	v, err := b.Get(key)
+	require.Equal(t, badger.ErrKeyNotFound, err)
+	require.Nil(t, v)
+
+	v, err = doc.Get(key)
+	require.Nil(t, err)
+	require.Equal(t, val, v)
+}
+
+func TestDeleteByNamespace(t *testing.T) {
+	db, clean := mustNewDB()
+	defer clean()
+
+	var (
+		key = []byte("foo")
+		val = []byte("bar")
+	)
+
+	ns1, err := db.CreateNamespace([]byte("ns1"))
+	require.Nil(t, err)
+	ns2, err := db.CreateNamespace([]byte("ns2"))
+	require.Nil(t, err)
+
+	require.Nil(t, ns1.DocBucket().Put(key, val))
+	require.Nil(t, ns2.DocBucket().Put(key, val))
+	require.Nil(t, db.DeleteNamespace([]byte("ns1")))
+	_, err = ns1.DocBucket().Get(key)
+	require.Equal(t, badger.ErrKeyNotFound, err)
+	v, err := ns2.DocBucket().Get(key)
+	require.Nil(t, err)
+	require.Equal(t, val, v)
 }

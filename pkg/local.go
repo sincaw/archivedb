@@ -2,9 +2,11 @@ package pkg
 
 import (
 	"encoding/json"
+	"fmt"
+	"sync"
+
 	"github.com/dgraph-io/badger/v3"
 	"go.mongodb.org/mongo-driver/bson"
-	"sync"
 )
 
 const (
@@ -100,7 +102,11 @@ func (k *kv) CreateNamespace(n []byte) (Namespace, error) {
 }
 
 func (k *kv) DeleteNamespace(name []byte) error {
-	panic("implement it")
+	ns, ok := k.namespaces[string(name)]
+	if !ok {
+		return fmt.Errorf("namespace %q not found", string(name))
+	}
+	return ns.deleteAll()
 }
 
 type ns struct {
@@ -136,7 +142,24 @@ func (n *ns) CreateBucket(name []byte) (Bucket, error) {
 }
 
 func (n *ns) DeleteBucket(name []byte) error {
-	panic("implement it")
+	b, ok := n.otherBuckets[string(name)]
+	if !ok {
+		return fmt.Errorf("bucket %q not exists", string(name))
+	}
+	return b.deleteAll()
+}
+
+func (n *ns) deleteAll() error {
+	bs := []*bucket{n.doc, n.obj}
+	for _, b := range n.otherBuckets {
+		bs = append(bs, b)
+	}
+	for _, b := range bs {
+		if err := b.deleteAll(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (n *ns) DocBucket() DocBucket {
@@ -193,7 +216,9 @@ func (b *bucket) Put(key, val []byte) error {
 }
 
 func (b *bucket) Delete(key []byte) (err error) {
-	panic("implement it")
+	return b.store.Update(func(txn *badger.Txn) error {
+		return txn.Delete(b.key(key))
+	})
 }
 
 func (b *bucket) Range(begin, end []byte) (Iterator, error) {
@@ -226,6 +251,30 @@ func (b *bucket) Exists(key []byte) (yes bool, err error) {
 		return nil
 	})
 	return
+}
+
+func (b *bucket) deleteAll() error {
+	return b.keys(func(key []byte) bool {
+		_ = b.store.Update(func(txn *badger.Txn) error {
+			return txn.Delete(key)
+		})
+		return true
+	})
+}
+
+func (b *bucket) keys(fn func([]byte) (goon bool)) error {
+	return b.store.View(func(txn *badger.Txn) error {
+		opt := badger.DefaultIteratorOptions
+		opt.PrefetchValues = false
+		it := txn.NewIterator(opt)
+		defer it.Close()
+		for it.Seek(b.prefix); it.ValidForPrefix(b.prefix); it.Next() {
+			if !fn(it.Item().Key()) {
+				break
+			}
+		}
+		return nil
+	})
 }
 
 func (b *bucket) find(query Query) (*iterator, error) {
