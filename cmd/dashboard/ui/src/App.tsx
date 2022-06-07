@@ -1,102 +1,50 @@
 import React, {useCallback, useEffect, useState} from 'react';
-import {initializeIcons, IStackStyles, IStackTokens, registerIcons, Stack} from '@fluentui/react';
-import {Route, Routes, useSearchParams} from "react-router-dom";
+import {Route, Routes, useSearchParams} from 'react-router-dom';
+import {Layout, Menu, Pagination} from 'antd';
 
 import axios from "axios";
-import _ from "lodash";
 import './App.css';
-import Header from "./components/Header";
-import Card, {IImageProps, ITweetProps} from "./components/Card";
-import icons from "./components/Icons";
+import Tweet, {ITweetProps} from "./components/Tweet";
 import {Settings} from "./components/Settings";
 
-
-const stackTokens: IStackTokens = {};
-const mainStackStyles: Partial<IStackStyles> = {
-  root: {
-    paddingTop: '45px',
-  },
-};
-
-const stackStyles: Partial<IStackStyles> = {
-  root: {
-    width: '960px',
-    margin: '0 auto',
-    color: '#605e5c',
-  },
-};
-
-
-const useKeyPress = function (targetKey: string) {
-  const [keyPressed, setKeyPressed] = useState(false);
-
-  const downHandler = (ev: KeyboardEvent): any => {
-    if (ev.key === targetKey) {
-      setKeyPressed(true);
-    }
-  }
-
-  const upHandler = (ev: KeyboardEvent): any => {
-    if (ev.key === targetKey) {
-      setKeyPressed(false);
-    }
-  };
-
-  React.useEffect(() => {
-    window.addEventListener("keydown", downHandler);
-    window.addEventListener("keyup", upHandler);
-
-    return () => {
-      window.removeEventListener("keydown", downHandler);
-      window.removeEventListener("keyup", upHandler);
-    };
-  });
-
-  return keyPressed;
-};
-
+const {Header, Content, Footer} = Layout;
 
 export const App: React.FunctionComponent = () => {
-  registerIcons(icons);
-  initializeIcons();
-
   return (
-    <Stack tokens={stackTokens} styles={mainStackStyles}>
-      <Header/>
-      <Routes>
-        <Route path="/" element={<Weibo/>}/>
-        <Route path="settings" element={<Settings/>}/>
-      </Routes>
-    </Stack>
+    <Layout>
+      <Header style={{position: 'fixed', zIndex: 1, width: '100%'}}>
+        <Menu
+          theme="dark"
+          mode="horizontal"
+          defaultSelectedKeys={['1']}
+          items={new Array(3).fill(null).map((_, index) => ({
+            key: String(index + 1),
+            label: `nav ${index + 1}`,
+          }))}
+        />
+      </Header>
+      <Content className="site-layout" style={{padding: '0 50px', marginTop: 64}}>
+        <div style={{marginTop: 10}}>
+          <Routes>
+            <Route path="/" element={<Weibo/>}/>
+            <Route path="settings" element={<Settings/>}/>
+          </Routes>
+        </div>
+      </Content>
+      <Footer style={{textAlign: 'center'}}>ArchiveDB ©2022</Footer>
+    </Layout>
   );
 };
 
 const Weibo: React.FunctionComponent = () => {
-  const rightPress = useKeyPress("ArrowRight");
-  const leftPress = useKeyPress("ArrowLeft");
-
   const [data, updateData] = useState<ITweetProps[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const pageKey = 'page'
   const getCurrentPage = useCallback(
     () => (parseInt(searchParams.get(pageKey)!) || 1),
-    [searchParams])
-
-  useEffect(() => {
-    if (rightPress) {
-      const p = getCurrentPage() + 1
-      setSearchParams({page: p.toString()})
-    }
-  }, [rightPress, getCurrentPage, setSearchParams]);
-
-  useEffect(() => {
-    if (leftPress) {
-      let p = getCurrentPage() - 1
-      p = p < 1 ? 1 : p
-      setSearchParams({page: p.toString()})
-    }
-  }, [leftPress, getCurrentPage, setSearchParams]);
+    [searchParams]
+  )
 
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -118,7 +66,14 @@ const Weibo: React.FunctionComponent = () => {
     fetch()
   }, [searchParams, getCurrentPage])
 
-  return <Stack horizontalAlign="center" styles={stackStyles}>
-    {data.map(item => <Card key={item.mid} data={item}/>)}
-  </Stack>
+  return <div style={{margin: '0 auto', width: 820}}>
+    {data.map(item => <Tweet key={item.mid} data={item}/>)}
+    <Pagination
+      defaultCurrent={getCurrentPage()}
+      total={500}
+      showSizeChanger={false}
+      style={{margin: '0 auto', width: 500}}
+      onChange={(p, _)=>setSearchParams({page: p.toString()})}
+    />
+  </div>
 }

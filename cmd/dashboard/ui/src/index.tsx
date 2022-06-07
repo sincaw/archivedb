@@ -1,18 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
-import { BrowserRouter } from "react-router-dom";
+import {BrowserRouter} from "react-router-dom";
 import {App} from './App';
-import {mergeStyles} from '@fluentui/react';
 import reportWebVitals from './reportWebVitals';
+import 'antd/dist/antd.min.css';
 
-// Inject some global styles
-mergeStyles({
-  ':global(body,html,#root)': {
-    margin: 0,
-    padding: 0,
-    height: '100vh',
-  },
-});
 
 ReactDOM.render(
   <React.StrictMode>
