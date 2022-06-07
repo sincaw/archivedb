@@ -2,6 +2,7 @@ import {DocumentCard, DocumentCardActivity} from "@fluentui/react/lib/DocumentCa
 import {IDocumentCardStyles, List} from "@fluentui/react";
 import React from "react";
 import {getTheme, ITheme, mergeStyleSets} from '@fluentui/react/lib/Styling';
+import moment from 'moment';
 
 const theme: ITheme = getTheme();
 const {palette, fonts} = theme;
@@ -11,14 +12,26 @@ export interface IImageProps {
   origin?: string
 }
 
-export interface ICardProps {
-  author: string
-  avatar: string
-  date: string
-  content: string
-  images: IImageProps[]
+export interface IUserProps {
+  profile_image_url: string
+  screen_name: string
+}
+
+export interface IArchiveImg {
+  thumb: string
+  origin: string
+}
+
+export interface ITweetProps {
+  text_raw: string
+  mid: string
+  created_at: string
+  user: IUserProps
+  visible: { listId: number }
+  pic_ids: string[]
   video?: string
-  id?: string
+  archiveImages: { [key: string]: IArchiveImg }
+  retweeted_status: ITweetProps
 }
 
 const cardStyles: Partial<IDocumentCardStyles> = {
@@ -86,39 +99,75 @@ const onRenderCell = (item: IImageProps | undefined, index: number | undefined) 
   return (
     <div
       className={classNames.listGridTile}
-      data-is-focusable
+      data-is-focusable={true}
       style={{
         width: '33.33%'
       }}
     >
       <div className={classNames.listGridSizer}>
         <div className={classNames.listGridPadder}>
-          <a href={item?.origin} target="_blank" rel="noreferrer"><img src={item?.thumbnail} className={classNames.listGridImage} alt=""/></a>
+          <a href={item?.origin} target="_blank" rel="noreferrer">
+            <img
+              src={item?.thumbnail}
+              className={classNames.listGridImage}
+              alt=""/>
+          </a>
         </div>
       </div>
     </div>
   );
 }
 
+const renderTweetHead = (tweet: ITweetProps) => {
+  return <div>
+    <DocumentCardActivity
+      activity={`${moment(tweet.created_at).format('YYYY-MM-DD hh:mm:ss')}  -  ${tweet.mid}`}
+      people={[{
+        name: tweet.user.screen_name,
+        profileImageSrc: tweet.user.profile_image_url,
+      }]}/>
+    <pre style={{whiteSpace: 'pre-wrap', padding: '5px', fontFamily: 'inherit'}}>{tweet.text_raw}</pre>
+  </div>
+}
 
-export default function Card({author, avatar, date, images, content, video, id}: ICardProps) {
-  const DocumentCardActivityPeople = [{
-    name: author,
-    profileImageSrc: avatar
-  }];
-
-  return <DocumentCard styles={cardStyles}>
-    <DocumentCardActivity activity={`${date}  -  ${id}`} people={DocumentCardActivityPeople}/>
-    <pre style={{whiteSpace: 'pre-wrap', padding: '5px'}}>{content}</pre>
-    <List
-      style={{padding: 10}}
-      items={images}
-      onRenderCell={onRenderCell}
-    />
-    {video ?
-      <video controls width="100%">
-        <source src={video} type="video/mp4"/>
-      </video> : null
+const getImages = (tweet: ITweetProps): IImageProps[] => {
+  if (tweet.retweeted_status) {
+    tweet = tweet.retweeted_status
+  }
+  return tweet.pic_ids.map((id): IImageProps | undefined => {
+    if (id in tweet.archiveImages) {
+      const t = tweet.archiveImages[id]
+      return {
+        thumbnail: `/api/resource?key=${t.thumb}`,
+        origin: `/api/resource?key=${t.origin}`,
+      }
     }
-  </DocumentCard>
+    return undefined
+  }).filter((i): i is IImageProps => !!i)
+}
+
+export default function Card({data}: { data: ITweetProps }) {
+  const originTweet = data.retweeted_status ? data.retweeted_status : data
+  return <div style={{marginTop: '20px'}}>
+    <DocumentCard styles={cardStyles}>
+      {renderTweetHead(data)}
+      {data.retweeted_status ? <div style={{background: "#F0F1F4"}}>
+        {renderTweetHead(data.retweeted_status)}
+        <List
+          style={{padding: 9, overflow: 'auto'}}
+          items={getImages(data)}
+          onRenderCell={onRenderCell}
+        />
+      </div> : <List
+        style={{padding: 9, overflow: 'auto'}}
+        items={getImages(data)}
+        onRenderCell={onRenderCell}
+      />}
+      {originTweet.video ?
+        <video controls width="100%">
+          <source src={originTweet.video} type="video/mp4"/>
+        </video> : null
+      }
+    </DocumentCard>
+  </div>
 }

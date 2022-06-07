@@ -6,7 +6,7 @@ import axios from "axios";
 import _ from "lodash";
 import './App.css';
 import Header from "./components/Header";
-import Card, {IImageProps} from "./components/Card";
+import Card, {IImageProps, ITweetProps} from "./components/Card";
 import icons from "./components/Icons";
 import {Settings} from "./components/Settings";
 
@@ -75,7 +75,7 @@ const Weibo: React.FunctionComponent = () => {
   const rightPress = useKeyPress("ArrowRight");
   const leftPress = useKeyPress("ArrowLeft");
 
-  const [data, updateData] = useState([]);
+  const [data, updateData] = useState<ITweetProps[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const pageKey = 'page'
@@ -119,39 +119,6 @@ const Weibo: React.FunctionComponent = () => {
   }, [searchParams, getCurrentPage])
 
   return <Stack horizontalAlign="center" styles={stackStyles}>
-    {data.filter(item => {
-      if ('retweeted_status' in item) {
-        item = item['retweeted_status']
-      }
-      return item['visible']['list_id'] === 0
-    }).map(item => {
-      if ('retweeted_status' in item) {
-        item = item['retweeted_status']
-      }
-      const extraImageKey = "archiveImages"
-      let images: IImageProps[] = []
-      if ('pic_ids' in item && extraImageKey in item) {
-        images = (item['pic_ids'] as string[]).map((id): IImageProps => {
-          var ret: IImageProps = {}
-          if (id in item[extraImageKey]) {
-            const t = item[extraImageKey][id]
-            ret.thumbnail = `/api/resource?key=${t['thumb']}`
-            ret.origin = `/api/resource?key=${t['origin']}`
-          }
-          return ret
-        }).filter(i => i.origin !== '')
-      }
-
-      return <Card
-        key={_.get(item, 'idstr', '')}
-        author={_.get(item, 'user.screen_name', '')}
-        avatar={_.get(item, 'user.profile_image_url', '')}
-        date={_.get(item, 'created_at', '')}
-        content={_.get(item, 'text_raw', '')}
-        images={images}
-        video={_.get(item, 'video')}
-        id={_.get(item, 'idstr')}
-      />
-    })}
+    {data.map(item => <Card key={item.mid} data={item}/>)}
   </Stack>
 }
