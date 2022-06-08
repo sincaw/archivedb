@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -18,6 +19,10 @@ const (
 
 	builtinDocBucketName    = "d"
 	builtinObjectBucketName = "o"
+
+	inBucketKeyPrefix  = "b"
+	inBucketMetaPrefix = "o"
+	inBucketMetaIncKey = "id"
 )
 
 type kv struct {
@@ -202,11 +207,11 @@ func (b *bucket) GetDoc(key []byte) (Item, error) {
 }
 
 func (b *bucket) Find(query Query) (DocIterator, error) {
-	return b.find(query)
+	return b.find(query, true)
 }
 
 func (b bucket) key(key []byte) []byte {
-	return append(b.prefix, key...)
+	return genKey(b.prefix, []byte(inBucketKeyPrefix), key)
 }
 
 func (b *bucket) Put(key, val []byte) error {
@@ -215,14 +220,37 @@ func (b *bucket) Put(key, val []byte) error {
 	})
 }
 
+func (b *bucket) PutVal(val []byte) ([]byte, error) {
+	seq, err := b.store.GetSequence(genKey(b.prefix, []byte(inBucketMetaPrefix), []byte(inBucketMetaIncKey)), 1)
+	if err != nil {
+		return nil, err
+	}
+	defer seq.Release()
+	n, err := seq.Next()
+	if err != nil {
+		return nil, err
+	}
+
+	var key [8]byte
+	binary.BigEndian.PutUint64(key[:], n)
+	err = b.Put(key[:], val)
+	if err != nil {
+		return nil, err
+	}
+	return key[:], nil
+}
+
 func (b *bucket) Delete(key []byte) (err error) {
 	return b.store.Update(func(txn *badger.Txn) error {
 		return txn.Delete(b.key(key))
 	})
 }
 
-func (b *bucket) Range(begin, end []byte) (Iterator, error) {
-	panic("implement it")
+func (b *bucket) Range(begin, end []byte, reverse bool) (Iterator, error) {
+	if begin != nil || end != nil {
+		panic("not implemented")
+	}
+	return b.find(Query{}, reverse)
 }
 
 func (b *bucket) Get(key []byte) (val []byte, err error) {
@@ -277,23 +305,25 @@ func (b *bucket) keys(fn func([]byte) (goon bool)) error {
 	})
 }
 
-func (b *bucket) find(query Query) (*iterator, error) {
+func (b *bucket) find(query Query, reverse bool) (*iterator, error) {
 	txn := b.store.NewTransaction(false)
 	opt := badger.DefaultIteratorOptions
-	opt.Reverse = true
+	opt.Reverse = reverse
 	iter := txn.NewIterator(opt)
 	return &iterator{
-		query:  query,
-		txn:    txn,
-		iter:   iter,
-		prefix: b.prefix,
+		query:   query,
+		txn:     txn,
+		iter:    iter,
+		reverse: reverse,
+		prefix:  genKey(b.prefix, []byte(inBucketKeyPrefix)),
 	}, nil
 }
 
 type iterator struct {
-	query  Query
-	init   bool
-	prefix []byte
+	query   Query
+	init    bool
+	prefix  []byte
+	reverse bool
 
 	iter *badger.Iterator
 	txn  *badger.Txn
@@ -301,7 +331,11 @@ type iterator struct {
 
 func (i *iterator) Next() bool {
 	if !i.init {
-		i.iter.Seek(append(i.prefix, 'F'))
+		if i.reverse {
+			i.iter.Seek(append(i.prefix, 0xFF))
+		} else {
+			i.iter.Seek(i.prefix)
+		}
 		i.init = true
 	} else {
 		i.iter.Next()

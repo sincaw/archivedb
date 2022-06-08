@@ -33,12 +33,20 @@ type Namespace interface {
 }
 
 type Bucket interface {
+	// Put saves val by key
 	Put(key, val []byte) error
+	// PutVal saves value and return auto inc id (binary with big endian)
+	// Do not use it with Put func in the same bucket
+	// Items may be overwritten with auto generated key
+	PutVal(val []byte) ([]byte, error)
+	// Get gets val by key
 	Get(key []byte) ([]byte, error)
+	// Exists check if key exists
 	Exists(key []byte) (bool, error)
+	// Delete removes val by key
 	Delete(key []byte) error
 	// Range returns iterator for [beginKey, endKey), all for nil, nil
-	Range(beginKey, endKey []byte) (Iterator, error)
+	Range(beginKey, endKey []byte, reverse bool) (Iterator, error)
 }
 
 type DocBucket interface {

@@ -23,13 +23,20 @@ const (
 type Api struct {
 	ctx    context.Context
 	ns     pkg.Namespace
+	fav    pkg.Bucket
 	config *common.Config
 }
 
 // New Api instance using and db ns config
 func New(ctx context.Context, ns pkg.Namespace, config *common.Config) *Api {
+	fav, err := ns.CreateBucket([]byte(common.WeiboFavIndexBucket))
+	if err != nil {
+		panic(err)
+	}
+
 	return &Api{
 		ctx:    ctx,
+		fav:    fav,
 		ns:     ns,
 		config: config,
 	}

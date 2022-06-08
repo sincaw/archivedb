@@ -1,6 +1,8 @@
 package pkg
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"testing"
 
@@ -180,4 +182,39 @@ func TestDeleteByNamespace(t *testing.T) {
 	v, err := ns2.DocBucket().Get(key)
 	require.Nil(t, err)
 	require.Equal(t, val, v)
+}
+
+func TestPutVal(t *testing.T) {
+	db, clean := mustNewDB()
+	defer clean()
+	var (
+		ns     = mustGetDefaultNamespace(db)
+		b, err = ns.CreateBucket([]byte("bucket"))
+		val1   = []byte("foo")
+		val2   = []byte("bar")
+	)
+
+	require.Nil(t, err)
+
+	key1, err := b.PutVal(val1)
+	require.Nil(t, err)
+	key2, err := b.PutVal(val2)
+	require.Nil(t, err)
+	require.True(t, bytes.Compare(key2, key1) > 0)
+
+	val, err := b.Get(key1)
+	require.Nil(t, err)
+	require.Equal(t, val1, val)
+
+	val, err = b.Get(key2)
+	require.Nil(t, err)
+	require.Equal(t, val2, val)
+
+	// test range
+	it, err := b.Range(nil, nil, false)
+	require.Nil(t, err)
+	defer it.Release()
+	for it.Next() {
+		fmt.Println(it.Key())
+	}
 }

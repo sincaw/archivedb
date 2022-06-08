@@ -14,7 +14,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/sincaw/archivedb/cmd/dashboard/server/utils"
-	"github.com/sincaw/archivedb/pkg"
 )
 
 //go:embed build
@@ -57,7 +56,8 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	iter, err := a.ns.DocBucket().Find(pkg.Query{})
+	// order by fav time
+	iter, err := a.fav.Range(nil, nil, false)
 	if err != nil {
 		responseServerError(w, err)
 		return
@@ -67,7 +67,12 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 	items := bson.A{}
 	count := 0
 	for iter.Next() {
-		v, err := iter.ValueDoc()
+		k, err := iter.Value()
+		if err != nil {
+			responseServerError(w, err)
+			return
+		}
+		v, err := a.ns.DocBucket().GetDoc(k)
 		if err != nil {
 			responseServerError(w, err)
 			return

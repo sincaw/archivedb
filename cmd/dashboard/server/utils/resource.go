@@ -25,7 +25,6 @@ var (
 )
 
 func DocId(item pkg.Item) string {
-	item = OriginTweet(item)
 	return item["idstr"].(string)
 }
 

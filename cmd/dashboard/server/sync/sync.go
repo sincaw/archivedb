@@ -14,8 +14,11 @@ import (
 )
 
 type Sync struct {
-	ctx    context.Context
-	ns     pkg.Namespace
+	ctx context.Context
+
+	ns        pkg.Namespace
+	favBucket pkg.Bucket
+
 	config common.SyncerConfig
 
 	httpCli  *httpCli
@@ -54,9 +57,17 @@ func New(ctx context.Context, ns pkg.Namespace, config common.SyncerConfig) (*Sy
 		return nil, err
 	}
 
+	fav, err := ns.CreateBucket([]byte(common.WeiboFavIndexBucket))
+	if err != nil {
+		return nil, err
+	}
+
 	return &Sync{
-		ctx:    ctx,
-		ns:     ns,
+		ctx: ctx,
+
+		ns:        ns,
+		favBucket: fav,
+
 		config: config,
 
 		httpCli:  cli,
@@ -131,6 +142,7 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 	var (
 		doc = s.ns.DocBucket()
 		oss = s.ns.ObjectBucket()
+		fav = s.favBucket
 	)
 
 	key := []byte(utils.DocId(it))
@@ -187,6 +199,13 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 	t := utils.OriginTweet(it)
 	t[common.ExtraImagesKey] = urls
 	err = doc.PutDoc(key, it)
+	if err != nil {
+		zap.S().Error(err)
+		return false, err
+	}
+
+	// save fav
+	_, err = fav.PutVal(key)
 
 	return
 }
