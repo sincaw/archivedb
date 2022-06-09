@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/sincaw/archivedb/cmd/dashboard/server/common"
 	"github.com/sincaw/archivedb/cmd/dashboard/server/utils"
 	"github.com/sincaw/archivedb/pkg"
 )
@@ -81,6 +82,9 @@ func (h *httpCli) GetImages(rcs map[string]resource) (pkg.Resources, error) {
 	}
 
 	for url := range urls {
+		if url == "" {
+			continue
+		}
 		url := url
 		eg.Go(func() error {
 			resp, err := h.Get(url)
@@ -131,8 +135,14 @@ func (h httpCli) FetchLongTextIfNeeded(item pkg.Item) error {
 // FetchVideoIfNeeded try parse video in doc
 // It returns (nil, nil) when there is no video
 // or return video content and nil error
-func (h httpCli) FetchVideoIfNeeded(item pkg.Item) ([]byte, error) {
+func (h httpCli) FetchVideoIfNeeded(item pkg.Item, vq common.VideoQuality) ([]byte, error) {
+	if vq == common.VideoQualityNone {
+		logger.Debugf("no need to fetch video")
+		return nil, nil
+	}
+
 	if !utils.HasVideo(item) {
+		logger.Debugf("no video")
 		return nil, nil
 	}
 
@@ -147,31 +157,14 @@ func (h httpCli) FetchVideoIfNeeded(item pkg.Item) ([]byte, error) {
 		return nil, err
 	}
 
-	type showResp struct {
-		Ok       int `json:"ok"`
-		PageInfo struct {
-			MediaInfo struct {
-				Mp4HdUrl   string `json:"mp4_hd_url"`
-				Mp4720pMp4 string `json:"mp4_720p_mp4"`
-			} `json:"media_info"`
-		} `json:"page_info"`
-	}
-
-	show := new(showResp)
-	err = json.Unmarshal(resp, show)
+	url, err := vq.Get(resp)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshal fail with context %s, err %v", string(resp), err)
-	}
-	if show.Ok != 1 {
-		return nil, fmt.Errorf("wrong response %+v", show)
-	}
-	url := show.PageInfo.MediaInfo.Mp4720pMp4
-	if url == "" {
-		url = show.PageInfo.MediaInfo.Mp4HdUrl
+		return nil, err
 	}
 	if url == "" {
-		return nil, fmt.Errorf("can not find video url %q", string(resp))
+		return nil, nil
 	}
 
+	logger.Debugf("fetch video, url: %s", url)
 	return h.Get(url)
 }

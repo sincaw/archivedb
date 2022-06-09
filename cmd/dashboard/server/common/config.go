@@ -1,7 +1,9 @@
 package common
 
 import (
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/sincaw/archivedb/cmd/dashboard/server/utils"
@@ -161,6 +163,66 @@ func (q VideoQuality) Valid() error {
 		}
 	}
 	return fmt.Errorf("invalid video quality %q", q)
+}
+
+func (q VideoQuality) Get(content []byte) (url string, err error) {
+	type meta struct {
+		QualityIndex int    `json:"quality_index"`
+		QualityLabel string `json:"quality_label"`
+	}
+	type playInfo struct {
+		Mime  string `json:"mime"`
+		Url   string `json:"url"`
+		Width int    `json:"width"`
+	}
+	type playbackListItem struct {
+		Meta     meta     `json:"meta"`
+		PlayInfo playInfo `json:"play_info"`
+	}
+	type showResp struct {
+		Ok       int `json:"ok"`
+		PageInfo struct {
+			MediaInfo struct {
+				PlaybackList []playbackListItem `json:"playback_list"`
+			} `json:"media_info"`
+		} `json:"page_info"`
+	}
+
+	show := new(showResp)
+	err = json.Unmarshal(content, show)
+	if err != nil {
+		return "", fmt.Errorf("unmarshal fail with context %s, err %v", string(content), err)
+	}
+	if show.Ok != 1 {
+		return "", fmt.Errorf("wrong response %+v", show)
+	}
+
+	var list []playbackListItem
+	for _, i := range show.PageInfo.MediaInfo.PlaybackList {
+		if i.PlayInfo.Mime == "video/mp4" {
+			list = append(list, i)
+		}
+	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].PlayInfo.Width > list[j].PlayInfo.Width
+	})
+
+	fmt.Printf("video %+v\n", list)
+	switch q {
+	case VideoQualityBest:
+		return list[0].PlayInfo.Url, nil
+	case VideoQuality720p:
+	case VideoQuality360p:
+		for _, i := range list {
+			if i.Meta.QualityLabel == string(q) {
+				return i.PlayInfo.Url, nil
+			}
+		}
+		return "", nil
+	default:
+		return "", fmt.Errorf("unhandled quality %v", q)
+	}
+	return
 }
 
 // Ignore check if item should be ignored

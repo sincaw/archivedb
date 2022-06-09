@@ -199,8 +199,7 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 	}
 
 	if !yes {
-		l.Debug("fetch video")
-		video, err := s.httpCli.FetchVideoIfNeeded(it)
+		video, err := s.httpCli.FetchVideoIfNeeded(it, s.config.ContentTypes.VideoQuality)
 		if err != nil {
 			l.Errorf("fetch video %v", err)
 		}
