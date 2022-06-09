@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
-	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
 	"github.com/sincaw/archivedb/cmd/dashboard/server/api"
@@ -23,31 +22,34 @@ const (
 	Namespace  = "weibo"
 )
 
+var (
+	logger = utils.Logger()
+)
+
 func main() {
 	flag.Parse()
-	logger, _ := zap.NewDevelopment()
 
 	dir, err := utils.SelfDir()
 	if err != nil {
-		logger.Sugar().Fatalf("get binary dir fail %v", err)
+		logger.Fatalf("get binary dir fail %v", err)
 	}
 	content, err := ioutil.ReadFile(path.Join(dir, configFile))
 	if err != nil {
-		logger.Sugar().Fatalf("read config file fail %v", err)
+		logger.Fatalf("read config file fail %v", err)
 	}
 	config := new(common.Config)
 	err = yaml.Unmarshal(content, config)
 	if err != nil {
-		logger.Sugar().Fatalf("parse config file fail %v", err)
+		logger.Fatalf("parse config file fail %v", err)
 	}
 
 	dbPath := config.DatabasePath
 	if !filepath.IsAbs(dbPath) {
 		dbPath = path.Join(dir, dbPath)
 	}
-	db, err := pkg.New(dbPath, false)
+	db, err := pkg.New(dbPath, pkg.WithLogger(utils.NewLogger(utils.LevelError)))
 	if err != nil {
-		logger.Sugar().Fatalf("open db fail, path %q, err %v", dbPath, err)
+		logger.Fatalf("open db fail, path %q, err %v", dbPath, err)
 	}
 	defer db.Close()
 	ns, err := db.CreateNamespace([]byte(Namespace))
@@ -79,13 +81,13 @@ func main() {
 
 		syncer, err := sync.New(ctx, ns, config.Syncer)
 		if err != nil {
-			logger.Sugar().Fatalf("config syncer fail err %v", err)
+			logger.Fatalf("config syncer fail err %v", err)
 		}
 		go syncer.Start()
 
 		err = api.New(ctx, ns, config).Serve()
 		if !atomic.CompareAndSwapInt32(&reload, 1, 0) {
-			zap.S().Error(err)
+			logger.Error(err)
 		}
 	}
 }

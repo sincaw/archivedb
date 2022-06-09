@@ -5,12 +5,14 @@ import (
 	"fmt"
 
 	"github.com/robfig/cron/v3"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.uber.org/zap"
-
 	"github.com/sincaw/archivedb/cmd/dashboard/server/common"
 	"github.com/sincaw/archivedb/cmd/dashboard/server/utils"
 	"github.com/sincaw/archivedb/pkg"
+	"go.mongodb.org/mongo-driver/bson"
+)
+
+var (
+	logger = utils.Logger()
 )
 
 type Sync struct {
@@ -97,37 +99,42 @@ func (s *Sync) syncOnce() {
 	page := s.config.StartPage
 
 	defer func() {
-		fmt.Println("done")
+		logger.Info("sync done")
 	}()
 
 	for {
-		fmt.Printf("page %d\n", page)
+		logger.Infof("page %d", page)
 		url := fmt.Sprintf("https://weibo.com/ajax/favorites/all_fav?uid=%s&page=%d", s.config.Uid, page)
-		page++
 		resp, err := s.httpCli.Get(url)
 		if err != nil {
-			panic(err)
+			logger.Panic(err)
 		}
+		logger.Debugf("fetch page %d done", page)
+
+		page++
 
 		item := pkg.Item{}
 		err = bson.UnmarshalExtJSON(resp, true, &item)
 		if err != nil {
-			panic(fmt.Sprintf("content %s, err %v\n", string(resp), err))
+			logger.Panicf(fmt.Sprintf("content %s, err %v", string(resp), err))
 		}
 		ok := item["ok"]
 		if ok != int32(1) {
-			panic(fmt.Sprintf("invalid content: %q", string(resp)))
+			logger.Panicf(fmt.Sprintf("invalid content: %q", string(resp)))
 		}
 
 		items := item["data"].(bson.A)
+		logger.Debugf("parse %d items", len(items))
+
 		if len(items) == 0 {
 			return
 		}
+
 		for _, i := range items {
 			it := i.(pkg.Item)
 			stop, err := s.saveTweet(it)
 			if err != nil {
-				zap.S().Error(err)
+				logger.Error(err)
 				return
 			}
 			if stop {
@@ -146,6 +153,17 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 	)
 
 	key := []byte(utils.DocId(it))
+	l := logger.With("weibo id", string(key))
+	l.Debugf("process weibo id %q", string(key))
+
+	defer func() {
+		if err != nil {
+			l.Errorf("fail with err %v", err)
+		} else {
+			l.Debug("done")
+		}
+	}()
+
 	yes, err := doc.Exists(key)
 	if err != nil {
 		return
@@ -154,13 +172,15 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 		if s.config.IncrementalMode {
 			return true, nil
 		}
-		zap.S().Infof("skip with key %q", string(key))
+		l.Infof("skip with key %q", string(key))
 		return
 	}
 	urls, err := s.filterImageResources(it)
 	if err != nil {
-		panic(err)
+		l.Panic(err)
 	}
+
+	l.Debug("get images")
 	images, err := s.httpCli.GetImages(urls)
 	if err != nil {
 		return
@@ -179,9 +199,10 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 	}
 
 	if !yes {
+		l.Debug("fetch video")
 		video, err := s.httpCli.FetchVideoIfNeeded(it)
 		if err != nil {
-			fmt.Printf("fetch video %v\n", err)
+			l.Errorf("fetch video %v", err)
 		}
 		if len(video) != 0 {
 			// a tweet has only one video, save video use tweet key
@@ -194,13 +215,13 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 
 	err = s.httpCli.FetchLongTextIfNeeded(it)
 	if err != nil {
-		zap.S().Error(err)
+		logger.Error(err)
 	}
 	t := utils.OriginTweet(it)
 	t[common.ExtraImagesKey] = urls
 	err = doc.PutDoc(key, it)
 	if err != nil {
-		zap.S().Error(err)
+		logger.Error(err)
 		return false, err
 	}
 

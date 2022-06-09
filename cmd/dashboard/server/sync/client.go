@@ -173,6 +173,5 @@ func (h httpCli) FetchVideoIfNeeded(item pkg.Item) ([]byte, error) {
 		return nil, fmt.Errorf("can not find video url %q", string(resp))
 	}
 
-	fmt.Printf("fetch video %s\n", url)
 	return h.Get(url)
 }

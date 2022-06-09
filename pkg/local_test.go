@@ -20,7 +20,7 @@ func mustNewDB() (db DB, cleanFn func()) {
 	if err != nil {
 		panic(err)
 	}
-	db, err = New(path, false)
+	db, err = New(path)
 	if err != nil {
 		panic(err)
 	}

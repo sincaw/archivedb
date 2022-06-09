@@ -44,11 +44,15 @@ func (d kv) Close() error {
 	return d.store.Close()
 }
 
-func New(path string, readOnly bool) (DB, error) {
+func New(path string, opts ...Option) (DB, error) {
+	inOpt := applyOptions(opts)
 	opt := badger.DefaultOptions(path)
 	opt.BaseTableSize = 100 << 20
 	opt.BaseLevelSize = (100 << 20) * 10
-	opt.ReadOnly = readOnly
+	opt.ReadOnly = inOpt.readOnly
+	if inOpt.logger != nil {
+		opt.Logger = inOpt.logger
+	}
 
 	d, err := badger.Open(opt)
 	if err != nil {
