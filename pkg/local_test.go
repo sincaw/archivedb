@@ -267,7 +267,7 @@ func TestGetAt(t *testing.T) {
 		val = []byte("foo")
 	)
 
-	err := b.Put(key, val)
+	err := b.Put(key, val, WithMeta(&Meta{ChunkSize: 1}))
 	require.Nil(t, err)
 
 	buf := make([]byte, 2)
@@ -288,4 +288,13 @@ func TestGetAt(t *testing.T) {
 	require.Nil(t, err)
 	require.Equal(t, 1, n)
 	require.Equal(t, val[2:], buf[:n])
+
+	require.Nil(t, b.Delete(key))
+	err = b.Put(key, val, WithMeta(&Meta{ChunkSize: 2}))
+	require.Nil(t, err)
+
+	n, err = b.GetAt(key, buf, 1)
+	require.Nil(t, err)
+	require.Equal(t, len(buf), n)
+	require.Equal(t, val[1:1+len(buf)], buf)
 }

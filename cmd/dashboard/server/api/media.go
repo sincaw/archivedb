@@ -11,9 +11,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
 
+	"github.com/sincaw/archivedb/cmd/dashboard/server/common"
 	"github.com/sincaw/archivedb/cmd/dashboard/server/utils"
+)
+
+var (
+	logger = utils.Logger()
 )
 
 //go:embed build
@@ -41,9 +47,11 @@ func AssetHandler(prefix, root string) http.Handler {
 
 // ListHandler handles tweet list call
 func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
+	l := logger.With("api", "list")
 	vars := r.URL.Query()
 	limit, err := getIntVal(vars, "limit", defaultPageLimit, 1)
 	if err != nil {
+		l.Error("parse limit fail ", err)
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprintf(w, "%v", err)
 		return
@@ -51,6 +59,7 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 
 	offset, err := getIntVal(vars, "offset", 0, 0)
 	if err != nil {
+		l.Error("parse offset fail ", err)
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprintf(w, "%v", err)
 		return
@@ -59,6 +68,7 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 	// order by fav time
 	iter, err := a.fav.Range(nil, nil, false)
 	if err != nil {
+		l.Error("range db fail ", err)
 		responseServerError(w, err)
 		return
 	}
@@ -69,11 +79,13 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 	for iter.Next() {
 		k, err := iter.Value()
 		if err != nil {
+			l.Error("get item fail ", err)
 			responseServerError(w, err)
 			return
 		}
 		v, err := a.ns.DocBucket().GetDoc(k)
 		if err != nil {
+			l.Errorf("get doc by key %v fail %v", k, err)
 			responseServerError(w, err)
 			return
 		}
@@ -87,73 +99,130 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 		if count > (offset + limit) {
 			break
 		}
-		utils.ReplaceResources(v, uriResource)
+		utils.ReplaceResources(v, uriVideo)
 		items = append(items, v)
 	}
 
 	content, err := bson.MarshalExtJSON(bson.M{"data": items}, false, true)
 	if err != nil {
+		l.Error("marshal result fail ", err)
 		responseServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write(content)
+	_, err = w.Write(content)
+	if err != nil {
+		l.Error("write content fail: ", err)
+	}
 }
 
-// ResourceHandler handles media resource (binary) fetching
+// VideoHandler handles media resource (binary) fetching
 // Only support jpg image and mp4 video for now
-func (a *Api) ResourceHandler(w http.ResponseWriter, r *http.Request) {
-	vars := r.URL.Query()
-	key := vars["key"][0]
-	isVideo := !strings.HasPrefix(key, "http")
-	rc, _, err := a.ns.ObjectBucket().Get([]byte(key))
+func (a *Api) VideoHandler(w http.ResponseWriter, r *http.Request) {
+	l := logger.With("api", "video")
+
+	l.With("method", r.Method, "param", r.URL.Query(), "vars", mux.Vars(r)).Debug("query resource api")
+
+	key := mux.Vars(r)["id"]
+	if key == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	arr := strings.Split(key, ".")
+	key = arr[0]
+
+	meta, err := a.ns.ObjectBucket().GetMeta([]byte(key))
 	if err != nil {
+		l.Error("get object meta fail ", err)
 		responseServerError(w, err)
 		return
 	}
 
-	// TODO refine partial content parse and response
-	if isVideo {
-		// request range
-		var (
-			re       = regexp.MustCompile("bytes=(\\d+)-(\\d*)")
-			rangeStr = r.Header.Get("range")
-			match    = re.FindStringSubmatch(rangeStr)
+	headOnly := r.Header.Get("Sec-Fetch-Dest") == "document"
 
-			start = 0
-			end   = len(rc) - 1
-		)
+	var (
+		re       = regexp.MustCompile("bytes=(\\d+)-(\\d*)")
+		rangeStr = r.Header.Get("range")
+		match    = re.FindStringSubmatch(rangeStr)
 
-		if len(match) != 0 {
-			if len(match) != 3 {
-				responseServerError(w, fmt.Errorf("failed to parse range %q", rangeStr))
-				return
-			}
-			start, err = strconv.Atoi(match[1])
-			if err != nil {
-				responseServerError(w, fmt.Errorf("failed to parse start %v", err))
-				return
-			}
-			if len(match[2]) > 0 {
-				tmp, err := strconv.Atoi(match[2])
-				if err != nil {
-					responseServerError(w, fmt.Errorf("failed to parse end %v", err))
-					return
-				}
-				end = tmp
-			}
+		start = 0
+		end   = meta.TotalLen - 1
+	)
+
+	if len(match) != 0 {
+		if len(match) != 3 {
+			responseServerError(w, fmt.Errorf("failed to parse range %q", rangeStr))
+			return
 		}
+		start, err = strconv.Atoi(match[1])
+		if err != nil {
+			responseServerError(w, fmt.Errorf("failed to parse start %v", err))
+			return
+		}
+		if len(match[2]) > 0 {
+			tmp, err := strconv.Atoi(match[2])
+			if err != nil {
+				responseServerError(w, fmt.Errorf("failed to parse end %v", err))
+				return
+			}
+			end = tmp
+		}
+	}
 
-		w.Header().Add("Content-Type", "video/mp4")
-		w.Header().Add("access-control-allow-methods", "GET")
-		w.Header().Add("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(rc)))
-		w.Header().Add("Content-Length", fmt.Sprintf("%d", end-start+1))
-		w.Header().Add("accept-ranges", "bytes")
-		w.WriteHeader(http.StatusPartialContent)
-		w.Write(rc[start : end+1])
-	} else {
-		w.Header().Add("Content-Type", "image/jpeg")
+	w.Header().Add("Content-Type", meta.Mime)
+	w.Header().Add("access-control-allow-methods", "GET")
+	w.Header().Add("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, meta.TotalLen))
+	w.Header().Add("Content-Length", fmt.Sprintf("%d", meta.TotalLen))
+	w.Header().Add("accept-ranges", "bytes")
+	if len(match) == 0 {
 		w.WriteHeader(http.StatusOK)
-		w.Write(rc)
+	} else {
+		w.WriteHeader(http.StatusPartialContent)
+	}
+
+	if !headOnly {
+		l.Debugf("partial request %d-%d", start, end)
+		buf := make([]byte, end+1-start)
+		n, err := a.ns.ObjectBucket().GetAt([]byte(key), buf, start)
+		if err != nil {
+			l.Error("get partial content fail ", err)
+			responseServerError(w, err)
+			return
+		}
+		_, err = w.Write(buf[:n])
+		if err != nil {
+			l.Error("write content fail: ", err)
+		} else {
+			l.Debugf("partial response %d bytes", n)
+		}
+	}
+}
+
+func (a *Api) ImageHandler(w http.ResponseWriter, r *http.Request) {
+	var (
+		l   = logger.With("api", "image")
+		key = mux.Vars(r)["id"]
+	)
+
+	if key == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	arr := strings.Split(key, ".")
+	key = arr[0]
+	l = l.With("id", key)
+
+	rc, _, err := a.ns.ObjectBucket().Get([]byte(key))
+	if err != nil {
+		l.Error("get image fail: ", err)
+		responseServerError(w, err)
+		return
+	}
+
+	w.Header().Add("Content-Type", common.MimeImage)
+	w.WriteHeader(http.StatusOK)
+	_, err = w.Write(rc)
+	if err != nil {
+		l.Error("write content fail: ", err)
 	}
 }

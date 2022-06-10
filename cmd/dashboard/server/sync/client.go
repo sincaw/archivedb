@@ -72,19 +72,20 @@ func (h *httpCli) GetImages(rcs map[string]resource) (pkg.Resources, error) {
 		rc   = make(pkg.Resources)
 		mu   sync.Mutex
 		eg   errgroup.Group
-		urls = map[string]struct{}{}
+		urls = map[string]string{}
 	)
 
 	// get all unique urls
-	for _, i := range rcs {
-		urls[i.Thumb] = struct{}{}
-		urls[i.Origin] = struct{}{}
+	for k, i := range rcs {
+		urls[k+"-thumb"] = i.Thumb
+		urls[k] = i.Origin
 	}
 
-	for url := range urls {
+	for n, url := range urls {
 		if url == "" {
 			continue
 		}
+		n := n
 		url := url
 		eg.Go(func() error {
 			resp, err := h.Get(url)
@@ -92,7 +93,7 @@ func (h *httpCli) GetImages(rcs map[string]resource) (pkg.Resources, error) {
 				return err
 			}
 			mu.Lock()
-			rc[url] = resp
+			rc[n] = resp
 			mu.Unlock()
 			return nil
 		})

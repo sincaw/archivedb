@@ -320,7 +320,7 @@ func (b *bucket) Delete(key []byte) (err error) {
 			return err
 		}
 		val, err := item.ValueCopy(nil)
-		_, meta, err := b.unpackValue(val)
+		_, meta, err := unpackValue(val)
 		if meta == nil || len(meta.Chunks) == 0 {
 			return txn.Delete(b.key(key))
 		}
@@ -342,7 +342,7 @@ func (b *bucket) Range(begin, end []byte, reverse bool) (Iterator, error) {
 	return b.find(Query{}, reverse)
 }
 
-func (b *bucket) unpackValue(val []byte) ([]byte, *Meta, error) {
+func unpackValue(val []byte) ([]byte, *Meta, error) {
 	if val == nil {
 		return nil, nil, nil
 	}
@@ -373,7 +373,7 @@ func (b *bucket) Get(key []byte) (val []byte, meta *Meta, err error) {
 		if err != nil {
 			return err
 		}
-		val, meta, err = b.unpackValue(val)
+		val, meta, err = unpackValue(val)
 		if err != nil {
 			return err
 		}
@@ -403,7 +403,7 @@ func (b *bucket) get(key []byte, fn func(val []byte)) error {
 			return err
 		}
 		err = item.Value(func(val []byte) error {
-			v, _, err := b.unpackValue(val)
+			v, _, err := unpackValue(val)
 			if err != nil {
 				return err
 			}
@@ -419,7 +419,7 @@ func (b *bucket) GetAt(key, buf []byte, offset int) (n int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	if meta == nil {
+	if meta == nil || len(meta.Chunks) == 0 {
 		v, _, err := b.Get(key)
 		if err != nil {
 			return 0, err
@@ -439,11 +439,17 @@ func (b *bucket) GetAt(key, buf []byte, offset int) (n int, err error) {
 		startIdx = offset / meta.ChunkSize
 		endIdx   = len(buf)/meta.ChunkSize + startIdx + 1
 	)
+	if endIdx >= len(meta.Chunks) {
+		endIdx = len(meta.Chunks)
+	}
 
 	for i := startIdx; i < endIdx; i++ {
+		valOff := 0
+		if i == startIdx {
+			valOff = offset - i*meta.ChunkSize
+		}
 		err = b.chunk.get(meta.Chunks[i], func(val []byte) {
-			copy(buf[n:], val)
-			n += len(val)
+			n += copy(buf[n:], val[valOff:])
 		})
 		if err != nil {
 			return 0, err
@@ -466,7 +472,7 @@ func (b *bucket) GetMeta(key []byte) (meta *Meta, err error) {
 			return err
 		}
 		val, err := item.ValueCopy(nil)
-		_, meta, err = b.unpackValue(val)
+		_, meta, err = unpackValue(val)
 		return err
 	})
 	return
@@ -555,12 +561,21 @@ func (i *iterator) Key() ([]byte, error) {
 }
 
 func (i *iterator) Value() ([]byte, error) {
-	return i.iter.Item().ValueCopy(nil)
+	v, err := i.iter.Item().ValueCopy(nil)
+	if err != nil {
+		return nil, err
+	}
+	v, _, err = unpackValue(v)
+	return v, err
 }
 
 func (i *iterator) ValueDoc() (Item, error) {
 	var item = new(Item)
 	err := i.iter.Item().Value(func(val []byte) error {
+		val, _, err := unpackValue(val)
+		if err != nil {
+			return err
+		}
 		return bson.Unmarshal(val, item)
 	})
 	if err != nil {

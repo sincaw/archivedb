@@ -54,10 +54,9 @@ const getImages = (tweet: ITweetProps): IImageProps[] => {
   }
   return tweet.pic_ids.map((id): IImageProps | undefined => {
     if (id in tweet.archiveImages) {
-      const t = tweet.archiveImages[id]
       return {
-        thumbnail: `/api/resource?key=${t.thumb}`,
-        origin: `/api/resource?key=${t.origin}`,
+        thumbnail: `/api/image/${id}-thumb.jpg`,
+        origin: `/api/image/${id}.jpg`,
       }
     }
     return undefined

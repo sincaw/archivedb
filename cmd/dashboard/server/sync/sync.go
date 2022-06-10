@@ -5,10 +5,11 @@ import (
 	"fmt"
 
 	"github.com/robfig/cron/v3"
+	"go.mongodb.org/mongo-driver/bson"
+
 	"github.com/sincaw/archivedb/cmd/dashboard/server/common"
 	"github.com/sincaw/archivedb/cmd/dashboard/server/utils"
 	"github.com/sincaw/archivedb/pkg"
-	"go.mongodb.org/mongo-driver/bson"
 )
 
 var (
@@ -186,7 +187,7 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 		return
 	}
 	for n, img := range images {
-		err = oss.Put([]byte(n), img)
+		err = oss.Put([]byte(n), img, pkg.WithMeta(&pkg.Meta{Mime: common.MimeImage}))
 		if err != nil {
 			return
 		}
@@ -205,7 +206,7 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 		}
 		if len(video) != 0 {
 			// a tweet has only one video, save video use tweet key
-			err = oss.Put(key, video)
+			err = oss.Put(key, video, pkg.WithMeta(&pkg.Meta{Mime: common.MimeVideo, ChunkSize: 5 * 1024 * 1024}))
 			if err != nil {
 				return false, err
 			}

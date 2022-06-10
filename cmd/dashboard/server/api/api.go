@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	uriResource          = "/api/resource"
+	uriImage             = "/api/image"
+	uriVideo             = "/api/video"
 	uriDocList           = "/api/list"
 	uriDocUpdateSettings = "/api/settings"
 
@@ -46,7 +47,8 @@ func New(ctx context.Context, ns pkg.Namespace, config *common.Config) *Api {
 func (a *Api) Serve() error {
 	r := mux.NewRouter()
 	r.HandleFunc(uriDocList, a.ListHandler)
-	r.HandleFunc(uriResource, a.ResourceHandler)
+	r.HandleFunc(uriImage+"/{id}", a.ImageHandler).Methods("GET")
+	r.HandleFunc(uriVideo+"/{id}", a.VideoHandler).Methods("GET")
 	r.HandleFunc(uriDocUpdateSettings, a.SettingsHandler).Methods("GET", "POST")
 
 	handler := AssetHandler("/", "build")
