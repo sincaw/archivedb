@@ -106,7 +106,7 @@ func (a *Api) ResourceHandler(w http.ResponseWriter, r *http.Request) {
 	vars := r.URL.Query()
 	key := vars["key"][0]
 	isVideo := !strings.HasPrefix(key, "http")
-	rc, err := a.ns.ObjectBucket().Get([]byte(key))
+	rc, _, err := a.ns.ObjectBucket().Get([]byte(key))
 	if err != nil {
 		responseServerError(w, err)
 		return

@@ -32,3 +32,23 @@ func applyOptions(f []Option) *dbOption {
 	}
 	return opt
 }
+
+type putOption struct {
+	meta *Meta
+}
+
+type PutOption func(*putOption)
+
+func WithMeta(meta *Meta) PutOption {
+	return func(option *putOption) {
+		option.meta = meta
+	}
+}
+
+func applyPutOptions(f []PutOption) *putOption {
+	opt := &putOption{}
+	for _, fn := range f {
+		fn(opt)
+	}
+	return opt
+}

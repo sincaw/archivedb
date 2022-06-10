@@ -34,13 +34,19 @@ type Namespace interface {
 
 type Bucket interface {
 	// Put saves val by key
-	Put(key, val []byte) error
+	Put(key, val []byte, opts ...PutOption) error
 	// PutVal saves value and return auto inc id (binary with big endian)
 	// Do not use it with Put func in the same bucket
 	// Items may be overwritten with auto generated key
-	PutVal(val []byte) ([]byte, error)
+	PutVal(val []byte, opts ...PutOption) ([]byte, error)
 	// Get gets val by key
-	Get(key []byte) ([]byte, error)
+	Get(key []byte) ([]byte, *Meta, error)
+	// GetAt gets val from offset, it returns num of bytes
+	// It returns io.EOF if no bytes were read
+	GetAt(key, buf []byte, offset int) (int, error)
+	// GetMeta returns meta info
+	// It returns nil, nil when there is no meta
+	GetMeta(key []byte) (*Meta, error)
 	// Exists check if key exists
 	Exists(key []byte) (bool, error)
 	// Delete removes val by key

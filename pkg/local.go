@@ -19,10 +19,16 @@ const (
 
 	builtinDocBucketName    = "d"
 	builtinObjectBucketName = "o"
+	builtinChunkBucketName  = "t"
 
 	inBucketKeyPrefix  = "b"
 	inBucketMetaPrefix = "o"
 	inBucketMetaIncKey = "id"
+)
+
+const (
+	valueWithoutMeta = 0
+	valueWithMeta    = 1
 )
 
 type kv struct {
@@ -71,9 +77,12 @@ func putRaw(db *badger.DB, key, val []byte) error {
 	})
 }
 
-func genKey(ks ...[]byte) []byte {
+func mergeBytes(ks ...[]byte) []byte {
 	var ret []byte
 	for _, k := range ks {
+		if k == nil {
+			continue
+		}
 		ret = append(ret, k...)
 	}
 	return ret
@@ -105,7 +114,7 @@ func (k *kv) CreateNamespace(n []byte) (Namespace, error) {
 		return nil, err
 	}
 
-	ret := newNS(k.store, genKey([]byte(dbDataPrefix), n))
+	ret := newNS(k.store, mergeBytes([]byte(dbDataPrefix), n))
 	k.namespaces[name] = ret
 	return ret, nil
 }
@@ -120,18 +129,19 @@ func (k *kv) DeleteNamespace(name []byte) error {
 
 type ns struct {
 	sync.Mutex
-	store        *badger.DB
-	prefix       []byte
-	doc, obj     *bucket
-	otherBuckets map[string]*bucket
+	store           *badger.DB
+	prefix          []byte
+	doc, obj, chunk *bucket
+	otherBuckets    map[string]*bucket
 }
 
 func newNS(store *badger.DB, prefix []byte) *ns {
+	chunk := newBucket(store, mergeBytes(prefix, []byte(builtinBucketPrefix), []byte(builtinChunkBucketName)), nil)
 	ret := &ns{
 		store:        store,
 		prefix:       prefix,
-		doc:          newBucket(store, genKey(prefix, []byte(builtinBucketPrefix), []byte(builtinDocBucketName))),
-		obj:          newBucket(store, genKey(prefix, []byte(builtinBucketPrefix), []byte(builtinObjectBucketName))),
+		doc:          newBucket(store, mergeBytes(prefix, []byte(builtinBucketPrefix), []byte(builtinDocBucketName)), chunk),
+		obj:          newBucket(store, mergeBytes(prefix, []byte(builtinBucketPrefix), []byte(builtinObjectBucketName)), chunk),
 		otherBuckets: map[string]*bucket{},
 	}
 	return ret
@@ -145,7 +155,7 @@ func (n *ns) CreateBucket(name []byte) (Bucket, error) {
 		return b, nil
 	}
 
-	b := newBucket(n.store, genKey(n.prefix, []byte(otherBucketPrefix), name))
+	b := newBucket(n.store, mergeBytes(n.prefix, []byte(otherBucketPrefix), name), n.chunk)
 	n.otherBuckets[string(name)] = b
 	return b, nil
 }
@@ -181,13 +191,15 @@ func (n *ns) ObjectBucket() Bucket {
 
 type bucket struct {
 	store  *badger.DB
+	chunk  *bucket
 	prefix []byte
 }
 
-func newBucket(store *badger.DB, prefix []byte) *bucket {
+func newBucket(store *badger.DB, prefix []byte, chunk *bucket) *bucket {
 	return &bucket{
 		store:  store,
 		prefix: prefix,
+		chunk:  chunk,
 	}
 }
 
@@ -201,7 +213,7 @@ func (b *bucket) PutDoc(key []byte, item Item) error {
 }
 
 func (b *bucket) GetDoc(key []byte) (Item, error) {
-	val, err := b.Get(key)
+	val, _, err := b.Get(key)
 	if err != nil {
 		return nil, err
 	}
@@ -215,17 +227,71 @@ func (b *bucket) Find(query Query) (DocIterator, error) {
 }
 
 func (b bucket) key(key []byte) []byte {
-	return genKey(b.prefix, []byte(inBucketKeyPrefix), key)
+	return mergeBytes(b.prefix, []byte(inBucketKeyPrefix), key)
 }
 
-func (b *bucket) Put(key, val []byte) error {
+// Put saves val by key
+// value format:
+// | 1byte (has meta) | 4byte (uint32: meta len) | meta | value |
+// value will saved in chunk bucket when meta.ChunkSize > 0
+// e.g.
+// Value without meta: [0, value...]
+// Value with meta and 1 piece [1, meta len, meta..., value...]
+// Value with meta and n piece [1, meta len, meta...] and ([chunk 0] ... [chunk n]) in chunk bucket
+func (b *bucket) Put(key, val []byte, opts ...PutOption) error {
+	opt := applyPutOptions(opts)
+	if opt.meta == nil {
+		return b.put(key, mergeBytes([]byte{valueWithoutMeta}, val))
+	}
+
+	if opt.meta.ChunkSize < 0 {
+		return fmt.Errorf("invalid meta")
+	}
+
+	opt.meta.TotalLen = len(val)
+	if opt.meta.ChunkSize == 0 || opt.meta.ChunkSize > opt.meta.TotalLen {
+		return b.putWithMeta(key, val, opt.meta)
+	}
+
+	var chunks [][]byte
+	for i := 0; i < len(val); i += opt.meta.ChunkSize {
+		end := i + opt.meta.ChunkSize
+		if end > len(val) {
+			end = len(val)
+		}
+		chunks = append(chunks, val[i:end])
+	}
+
+	for _, chunk := range chunks {
+		k, err := b.chunk.PutVal(chunk)
+		if err != nil {
+			return err
+		}
+		opt.meta.Chunks = append(opt.meta.Chunks, k)
+	}
+	return b.putWithMeta(key, nil, opt.meta)
+}
+
+func (b *bucket) put(key, val []byte) error {
 	return b.store.Update(func(txn *badger.Txn) error {
 		return txn.Set(b.key(key), val)
 	})
 }
 
-func (b *bucket) PutVal(val []byte) ([]byte, error) {
-	seq, err := b.store.GetSequence(genKey(b.prefix, []byte(inBucketMetaPrefix), []byte(inBucketMetaIncKey)), 1)
+func (b *bucket) putWithMeta(key, val []byte, meta *Meta) error {
+	m, err := bson.Marshal(meta)
+	if err != nil {
+		return err
+	}
+
+	metaLen := make([]byte, 4)
+	binary.BigEndian.PutUint32(metaLen, uint32(len(m)))
+	content := mergeBytes([]byte{valueWithMeta}, metaLen, m, val)
+	return b.put(key, content)
+}
+
+func (b *bucket) PutVal(val []byte, opts ...PutOption) ([]byte, error) {
+	seq, err := b.store.GetSequence(mergeBytes(b.prefix, []byte(inBucketMetaPrefix), []byte(inBucketMetaIncKey)), 1)
 	if err != nil {
 		return nil, err
 	}
@@ -246,6 +312,25 @@ func (b *bucket) PutVal(val []byte) ([]byte, error) {
 
 func (b *bucket) Delete(key []byte) (err error) {
 	return b.store.Update(func(txn *badger.Txn) error {
+		item, err := txn.Get(b.key(key))
+		if err != nil {
+			if err == badger.ErrKeyNotFound {
+				return nil
+			}
+			return err
+		}
+		val, err := item.ValueCopy(nil)
+		_, meta, err := b.unpackValue(val)
+		if meta == nil || len(meta.Chunks) == 0 {
+			return txn.Delete(b.key(key))
+		}
+
+		for _, c := range meta.Chunks {
+			err = b.chunk.Delete(c)
+			if err != nil {
+				return err
+			}
+		}
 		return txn.Delete(b.key(key))
 	})
 }
@@ -257,13 +342,131 @@ func (b *bucket) Range(begin, end []byte, reverse bool) (Iterator, error) {
 	return b.find(Query{}, reverse)
 }
 
-func (b *bucket) Get(key []byte) (val []byte, err error) {
+func (b *bucket) unpackValue(val []byte) ([]byte, *Meta, error) {
+	if val == nil {
+		return nil, nil, nil
+	}
+	m := val[0]
+	if m == valueWithoutMeta {
+		return val[1:], nil, nil
+	}
+
+	metaLen := binary.BigEndian.Uint32(val[1:])
+	start := 1 + 4
+	metaBuf := val[start : start+int(metaLen)]
+	var meta = new(Meta)
+	err := bson.Unmarshal(metaBuf, meta)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unmarshal meta fail with err: %v", err)
+	}
+
+	return val[1+4+metaLen:], meta, nil
+}
+
+func (b *bucket) Get(key []byte) (val []byte, meta *Meta, err error) {
 	err = b.store.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(b.key(key))
 		if err != nil {
 			return err
 		}
 		val, err = item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		val, meta, err = b.unpackValue(val)
+		if err != nil {
+			return err
+		}
+		// no chunks
+		if meta == nil || len(meta.Chunks) == 0 {
+			return nil
+		}
+
+		// merge all chunks
+		for _, k := range meta.Chunks {
+			err = b.chunk.get(k, func(v []byte) {
+				val = append(val, v...)
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return
+}
+
+func (b *bucket) get(key []byte, fn func(val []byte)) error {
+	return b.store.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(b.key(key))
+		if err != nil {
+			return err
+		}
+		err = item.Value(func(val []byte) error {
+			v, _, err := b.unpackValue(val)
+			if err != nil {
+				return err
+			}
+			fn(v)
+			return nil
+		})
+		return err
+	})
+}
+
+func (b *bucket) GetAt(key, buf []byte, offset int) (n int, err error) {
+	meta, err := b.GetMeta(key)
+	if err != nil {
+		return 0, err
+	}
+	if meta == nil {
+		v, _, err := b.Get(key)
+		if err != nil {
+			return 0, err
+		}
+		if offset >= len(v) {
+			return 0, fmt.Errorf("out of range [0,%d)", meta.TotalLen)
+		}
+		n = copy(buf, v[offset:])
+		return n, nil
+	}
+
+	if offset > meta.TotalLen || offset < 0 {
+		return 0, fmt.Errorf("out of range [0,%d) with meta", meta.TotalLen)
+	}
+
+	var (
+		startIdx = offset / meta.ChunkSize
+		endIdx   = len(buf)/meta.ChunkSize + startIdx + 1
+	)
+
+	for i := startIdx; i < endIdx; i++ {
+		err = b.chunk.get(meta.Chunks[i], func(val []byte) {
+			copy(buf[n:], val)
+			n += len(val)
+		})
+		if err != nil {
+			return 0, err
+		}
+		if n >= len(buf) {
+			break
+		}
+	}
+	if n > len(buf) {
+		n = len(buf)
+	}
+
+	return n, nil
+}
+
+func (b *bucket) GetMeta(key []byte) (meta *Meta, err error) {
+	err = b.store.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(b.key(key))
+		if err != nil {
+			return err
+		}
+		val, err := item.ValueCopy(nil)
+		_, meta, err = b.unpackValue(val)
 		return err
 	})
 	return
@@ -319,7 +522,7 @@ func (b *bucket) find(query Query, reverse bool) (*iterator, error) {
 		txn:     txn,
 		iter:    iter,
 		reverse: reverse,
-		prefix:  genKey(b.prefix, []byte(inBucketKeyPrefix)),
+		prefix:  mergeBytes(b.prefix, []byte(inBucketKeyPrefix)),
 	}, nil
 }
 
