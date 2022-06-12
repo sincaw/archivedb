@@ -118,7 +118,7 @@ func (q ImageQuality) Valid() error {
 //	"largest": {},
 //	"mw2000": {},
 //}
-func (q ImageQuality) Get(item pkg.Item, withThumb bool) (url, thumbUrl string, err error) {
+func (q ImageQuality) Get(item pkg.Item, withThumb bool) (url, thumbUrl, liveUrl string, err error) {
 	if withThumb {
 		// bmiddle as thumbnail (thumbnail is too small to display)
 		thumbUrl = imageUrlByKey(item, "bmiddle")
@@ -134,6 +134,9 @@ func (q ImageQuality) Get(item pkg.Item, withThumb bool) (url, thumbUrl string, 
 		url = imageUrlByKey(item, "largest")
 	default:
 		err = fmt.Errorf("unhandled image quality %q", q)
+	}
+	if v, ok := item["video"]; ok {
+		liveUrl = v.(string)
 	}
 	return
 }

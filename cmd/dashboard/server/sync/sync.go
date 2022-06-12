@@ -234,6 +234,7 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 type resource struct {
 	Thumb  string `json:"thumb"`
 	Origin string `json:"origin"`
+	Live   string `json:"live"`
 }
 
 // filterImageResources get image urls using config rule
@@ -251,13 +252,14 @@ func (s Sync) filterImageResources(item pkg.Item) (map[string]resource, error) {
 
 	ret := map[string]resource{}
 	for key, i := range picInfo {
-		u, tu, err := imgQ.Get(i.(pkg.Item), withThumb)
+		u, tu, lu, err := imgQ.Get(i.(pkg.Item), withThumb)
 		if err != nil {
 			return nil, err
 		}
 		ret[key] = resource{
 			Thumb:  tu,
 			Origin: u,
+			Live:   lu,
 		}
 	}
 	return ret, nil

@@ -78,6 +78,7 @@ func (h *httpCli) GetImages(rcs map[string]resource) (pkg.Resources, error) {
 	// get all unique urls
 	for k, i := range rcs {
 		urls[k+"-thumb"] = i.Thumb
+		urls[k+"-live"] = i.Live
 		urls[k] = i.Origin
 	}
 
