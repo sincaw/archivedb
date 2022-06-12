@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"github.com/dgraph-io/badger/v3"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
@@ -9,6 +10,10 @@ type Query = bson.D
 
 type Resource = []byte
 type Resources map[string]Resource
+
+var (
+	ErrKeyNotFound = badger.ErrKeyNotFound
+)
 
 type DB interface {
 	// CreateNamespace creates or gets namespace
@@ -30,6 +35,8 @@ type Namespace interface {
 	CreateBucket(name []byte) (Bucket, error)
 	// DeleteBucket deletes bucket by name and all data in the bucket
 	DeleteBucket(name []byte) error
+	// ListBucket gets all user buckets
+	ListBucket() ([]string, error)
 }
 
 type Bucket interface {

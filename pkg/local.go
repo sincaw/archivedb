@@ -10,27 +10,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-const (
-	dbDataPrefix = "d"
-	dbMetaPrefix = "m"
-
-	builtinBucketPrefix = "b"
-	otherBucketPrefix   = "o"
-
-	builtinDocBucketName    = "d"
-	builtinObjectBucketName = "o"
-	builtinChunkBucketName  = "t"
-
-	inBucketKeyPrefix  = "b"
-	inBucketMetaPrefix = "o"
-	inBucketMetaIncKey = "id"
-)
-
-const (
-	valueWithoutMeta = 0
-	valueWithMeta    = 1
-)
-
 type kv struct {
 	sync.Mutex
 	store      *badger.DB
@@ -41,12 +20,12 @@ type kvMeta struct {
 	Namespaces []string `json:"namespaces"`
 }
 
-func (d kv) Compact() error {
+func (d *kv) Compact() error {
 	d.store.Sync()
 	return d.store.Flatten(1)
 }
 
-func (d kv) Close() error {
+func (d *kv) Close() error {
 	return d.store.Close()
 }
 
@@ -77,15 +56,16 @@ func putRaw(db *badger.DB, key, val []byte) error {
 	})
 }
 
-func mergeBytes(ks ...[]byte) []byte {
-	var ret []byte
-	for _, k := range ks {
-		if k == nil {
-			continue
+func getRaw(db *badger.DB, key []byte) (val []byte, err error) {
+	err = db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(key)
+		if err != nil {
+			return err
 		}
-		ret = append(ret, k...)
-	}
-	return ret
+		val, err = item.ValueCopy(nil)
+		return err
+	})
+	return
 }
 
 func (k *kv) CreateNamespace(n []byte) (Namespace, error) {
@@ -109,12 +89,17 @@ func (k *kv) CreateNamespace(n []byte) (Namespace, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = putRaw(k.store, []byte(dbMetaPrefix), content)
+	err = putRaw(k.store, []byte{dbMetaPrefix}, content)
 	if err != nil {
 		return nil, err
 	}
 
-	ret := newNS(k.store, mergeBytes([]byte(dbDataPrefix), n))
+	ret := newNS(k.store, mergeBytes([]byte{dbDataPrefix}, n))
+	err = ret.loadMetas()
+	if err != nil {
+		return nil, err
+	}
+
 	k.namespaces[name] = ret
 	return ret, nil
 }
@@ -136,12 +121,12 @@ type ns struct {
 }
 
 func newNS(store *badger.DB, prefix []byte) *ns {
-	chunk := newBucket(store, mergeBytes(prefix, []byte(builtinBucketPrefix), []byte(builtinChunkBucketName)), nil)
+	chunk := newBucket(store, mergeBytes(prefix, []byte{nsBuiltinBucketPrefix}, []byte(builtinChunkBucketName)), nil)
 	ret := &ns{
 		store:        store,
 		prefix:       prefix,
-		doc:          newBucket(store, mergeBytes(prefix, []byte(builtinBucketPrefix), []byte(builtinDocBucketName)), chunk),
-		obj:          newBucket(store, mergeBytes(prefix, []byte(builtinBucketPrefix), []byte(builtinObjectBucketName)), chunk),
+		doc:          newBucket(store, mergeBytes(prefix, []byte{nsBuiltinBucketPrefix}, []byte(builtinDocBucketName)), chunk),
+		obj:          newBucket(store, mergeBytes(prefix, []byte{nsBuiltinBucketPrefix}, []byte(builtinObjectBucketName)), chunk),
 		otherBuckets: map[string]*bucket{},
 	}
 	return ret
@@ -149,14 +134,18 @@ func newNS(store *badger.DB, prefix []byte) *ns {
 
 func (n *ns) CreateBucket(name []byte) (Bucket, error) {
 	n.Lock()
-	defer n.Unlock()
-
 	if b, ok := n.otherBuckets[string(name)]; ok {
 		return b, nil
 	}
-
-	b := newBucket(n.store, mergeBytes(n.prefix, []byte(otherBucketPrefix), name), n.chunk)
+	b := newBucket(n.store, mergeBytes(n.prefix, []byte{nsOtherBucketPrefix}, name), n.chunk)
 	n.otherBuckets[string(name)] = b
+	n.Unlock()
+
+	err := n.saveMetas()
+	if err != nil {
+		return nil, err
+	}
+
 	return b, nil
 }
 
@@ -166,6 +155,50 @@ func (n *ns) DeleteBucket(name []byte) error {
 		return fmt.Errorf("bucket %q not exists", string(name))
 	}
 	return b.deleteAll()
+}
+
+func (n *ns) ListBucket() ([]string, error) {
+	buckets := make([]string, 0, len(n.otherBuckets))
+	n.Lock()
+	for n := range n.otherBuckets {
+		buckets = append(buckets, n)
+	}
+	n.Unlock()
+	return buckets, nil
+}
+
+func (n *ns) saveMetas() error {
+	buckets, err := n.ListBucket()
+	if err != nil {
+		return err
+	}
+
+	content, err := json.Marshal(buckets)
+	if err != nil {
+		return err
+	}
+	return putRaw(n.store, mergeBytes(n.prefix, []byte{nsMetaPrefix}, []byte(nsBucketListKey)), content)
+}
+
+func (n *ns) loadMetas() error {
+	content, err := getRaw(n.store, mergeBytes(n.prefix, []byte{nsMetaPrefix}, []byte(nsBucketListKey)))
+	if err != nil {
+		if err == ErrKeyNotFound {
+			return nil
+		}
+		return err
+	}
+	buckets := make([]string, 0)
+	err = json.Unmarshal(content, &buckets)
+	n.Lock()
+	for _, b := range buckets {
+		if _, ok := n.otherBuckets[b]; !ok {
+			bu := newBucket(n.store, mergeBytes(n.prefix, []byte{nsOtherBucketPrefix}, []byte(b)), n.chunk)
+			n.otherBuckets[b] = bu
+		}
+	}
+	n.Unlock()
+	return nil
 }
 
 func (n *ns) deleteAll() error {
@@ -227,7 +260,7 @@ func (b *bucket) Find(query Query) (DocIterator, error) {
 }
 
 func (b bucket) key(key []byte) []byte {
-	return mergeBytes(b.prefix, []byte(inBucketKeyPrefix), key)
+	return mergeBytes(b.prefix, []byte{bucketKeyPrefix}, key)
 }
 
 // Put saves val by key
@@ -291,7 +324,7 @@ func (b *bucket) putWithMeta(key, val []byte, meta *Meta) error {
 }
 
 func (b *bucket) PutVal(val []byte, opts ...PutOption) ([]byte, error) {
-	seq, err := b.store.GetSequence(mergeBytes(b.prefix, []byte(inBucketMetaPrefix), []byte(inBucketMetaIncKey)), 1)
+	seq, err := b.store.GetSequence(mergeBytes(b.prefix, []byte{bucketMetaPrefix}, []byte(inBucketMetaIncKey)), 1)
 	if err != nil {
 		return nil, err
 	}
@@ -528,7 +561,7 @@ func (b *bucket) find(query Query, reverse bool) (*iterator, error) {
 		txn:     txn,
 		iter:    iter,
 		reverse: reverse,
-		prefix:  mergeBytes(b.prefix, []byte(inBucketKeyPrefix)),
+		prefix:  mergeBytes(b.prefix, []byte{bucketKeyPrefix}),
 	}, nil
 }
 

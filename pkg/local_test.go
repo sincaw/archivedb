@@ -97,6 +97,41 @@ func TestBucket(t *testing.T) {
 	}
 }
 
+func TestBucketList(t *testing.T) {
+	path, err := os.MkdirTemp("", tempDirPattern)
+	require.Nil(t, err)
+
+	db, err := New(path)
+	require.Nil(t, err)
+
+	ns := mustGetDefaultNamespace(db)
+	buckets, err := ns.ListBucket()
+	require.Nil(t, err)
+	require.Empty(t, buckets)
+
+	var (
+		bucketName = "foo"
+	)
+	_, err = ns.CreateBucket([]byte(bucketName))
+	require.Nil(t, err)
+	buckets, err = ns.ListBucket()
+	require.Nil(t, err)
+	require.Len(t, buckets, 1)
+	require.Equal(t, bucketName, buckets[0])
+
+	// reload db
+	db.Close()
+	db, err = New(path)
+	require.Nil(t, err)
+	defer os.RemoveAll(path)
+
+	ns = mustGetDefaultNamespace(db)
+	buckets, err = ns.ListBucket()
+	require.Nil(t, err)
+	require.Len(t, buckets, 1)
+	require.Equal(t, bucketName, buckets[0])
+}
+
 func TestPutAndGetDoc(t *testing.T) {
 	db, clean := mustNewDB()
 	defer clean()
