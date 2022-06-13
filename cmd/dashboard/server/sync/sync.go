@@ -2,10 +2,13 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/robfig/cron/v3"
 	"go.mongodb.org/mongo-driver/bson"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/sincaw/archivedb/cmd/dashboard/server/common"
 	"github.com/sincaw/archivedb/cmd/dashboard/server/utils"
@@ -24,7 +27,7 @@ type Sync struct {
 
 	config common.SyncerConfig
 
-	httpCli  *httpCli
+	httpCli  *common.HttpCli
 	cron     *cron.Cron
 	notifyCh chan struct{}
 }
@@ -43,7 +46,7 @@ func New(ctx context.Context, ns pkg.Namespace, config common.SyncerConfig) (*Sy
 		config.StartPage = 1
 	}
 
-	cli, err := NewWithHeader(map[string]string{"cookie": config.Cookie})
+	cli, err := common.NewWithHeader(map[string]string{"cookie": config.Cookie})
 	if err != nil {
 		return nil, err
 	}
@@ -96,6 +99,17 @@ func (s *Sync) Start() {
 	}
 }
 
+func (s *Sync) Accept(cookie string) {
+	cli, err := common.NewWithHeader(map[string]string{"cookie": cookie})
+	if err != nil {
+		logger.Error("update cookie fail ", err)
+		return
+	}
+	s.httpCli = cli
+	logger.Info("update cookie success, trigger sync")
+	s.notifyCh <- struct{}{}
+}
+
 func (s *Sync) syncOnce() {
 	page := s.config.StartPage
 
@@ -108,7 +122,8 @@ func (s *Sync) syncOnce() {
 		url := fmt.Sprintf("https://weibo.com/ajax/favorites/all_fav?uid=%s&page=%d", s.config.Uid, page)
 		resp, err := s.httpCli.Get(url)
 		if err != nil {
-			logger.Panic(err)
+			logger.Error(err)
+			return
 		}
 		logger.Debugf("fetch page %d done", page)
 
@@ -117,11 +132,13 @@ func (s *Sync) syncOnce() {
 		item := pkg.Item{}
 		err = bson.UnmarshalExtJSON(resp, true, &item)
 		if err != nil {
-			logger.Panicf(fmt.Sprintf("content %s, err %v", string(resp), err))
+			logger.Errorf(fmt.Sprintf("unmarshal content fail, err %v", err))
+			return
 		}
 		ok := item["ok"]
 		if ok != int32(1) {
-			logger.Panicf(fmt.Sprintf("invalid content: %q", string(resp)))
+			logger.Errorf(fmt.Sprintf("invalid content: %q", string(resp)))
+			return
 		}
 
 		items := item["data"].(bson.A)
@@ -182,7 +199,7 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 	}
 
 	l.Debug("get images")
-	images, err := s.httpCli.GetImages(urls)
+	images, err := GetImages(s.httpCli, urls)
 	if err != nil {
 		return
 	}
@@ -200,7 +217,7 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 	}
 
 	if !yes {
-		video, err := s.httpCli.FetchVideoIfNeeded(it, s.config.ContentTypes.VideoQuality)
+		video, err := FetchVideoIfNeeded(s.httpCli, it, s.config.ContentTypes.VideoQuality)
 		if err != nil {
 			l.Errorf("fetch video %v", err)
 		}
@@ -213,7 +230,7 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 		}
 	}
 
-	err = s.httpCli.FetchLongTextIfNeeded(it)
+	err = FetchLongTextIfNeeded(s.httpCli, it)
 	if err != nil {
 		logger.Error(err)
 	}
@@ -263,4 +280,110 @@ func (s Sync) filterImageResources(item pkg.Item) (map[string]resource, error) {
 		}
 	}
 	return ret, nil
+}
+func GetImages(cli *common.HttpCli, rcs map[string]resource) (pkg.Resources, error) {
+	if len(rcs) == 0 {
+		return nil, nil
+	}
+	var (
+		rc   = make(pkg.Resources)
+		mu   sync.Mutex
+		eg   errgroup.Group
+		urls = map[string]string{}
+	)
+
+	// get all unique urls
+	for k, i := range rcs {
+		urls[k+"-thumb"] = i.Thumb
+		urls[k+"-live"] = i.Live
+		urls[k] = i.Origin
+	}
+
+	for n, url := range urls {
+		if url == "" {
+			continue
+		}
+		n := n
+		url := url
+		eg.Go(func() error {
+			resp, err := cli.Get(url)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			rc[n] = resp
+			mu.Unlock()
+			return nil
+		})
+	}
+	return rc, eg.Wait()
+}
+
+func  FetchLongTextIfNeeded(cli *common.HttpCli, item pkg.Item) error {
+	item = utils.OriginTweet(item)
+	if _, ok := item["continue_tag"]; !ok {
+		return nil
+	}
+
+	id, ok := item["mblogid"]
+	if !ok {
+		return fmt.Errorf("no valid mblog id for %q", utils.DocId(item))
+	}
+	resp, err := cli.Get(fmt.Sprintf("https://weibo.com/ajax/statuses/longtext?id=%s", id))
+	if err != nil {
+		logger.Error(err)
+		return err
+	}
+
+	type longResp struct {
+		Ok   int `json:"ok"`
+		Data struct {
+			LongTextContent string `json:"longTextContent"`
+		} `json:"data"`
+	}
+	long := new(longResp)
+	err = json.Unmarshal(resp, long)
+	if err != nil {
+		logger.Error(err)
+		return fmt.Errorf("unmarshal fail with context %s, err %v", string(resp), err)
+	}
+	item["text_raw"] = long.Data.LongTextContent
+	return nil
+}
+
+// FetchVideoIfNeeded try parse video in doc
+// It returns (nil, nil) when there is no video
+// or return video content and nil error
+func FetchVideoIfNeeded(cli *common.HttpCli, item pkg.Item, vq common.VideoQuality) ([]byte, error) {
+	if vq == common.VideoQualityNone {
+		logger.Debugf("no need to fetch video")
+		return nil, nil
+	}
+
+	if !utils.HasVideo(item) {
+		logger.Debugf("no video")
+		return nil, nil
+	}
+
+	item = utils.OriginTweet(item)
+	id, ok := item["mblogid"]
+	if !ok {
+		return nil, fmt.Errorf("no valid mblog id for %q", utils.DocId(item))
+	}
+
+	resp, err := cli.Get(fmt.Sprintf("https://weibo.com/ajax/statuses/show?id=%s", id))
+	if err != nil {
+		return nil, err
+	}
+
+	url, err := vq.Get(resp)
+	if err != nil {
+		return nil, err
+	}
+	if url == "" {
+		return nil, nil
+	}
+
+	logger.Debugf("fetch video, url: %s", url)
+	return cli.Get(url)
 }

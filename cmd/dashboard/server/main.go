@@ -85,7 +85,7 @@ func main() {
 		}
 		go syncer.Start()
 
-		err = api.New(ctx, ns, config).Serve()
+		err = api.New(ctx, ns, config, syncer).Serve()
 		if !atomic.CompareAndSwapInt32(&reload, 1, 0) {
 			logger.Error(err)
 		}

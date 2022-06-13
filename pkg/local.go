@@ -135,6 +135,7 @@ func newNS(store *badger.DB, prefix []byte) *ns {
 func (n *ns) CreateBucket(name []byte) (Bucket, error) {
 	n.Lock()
 	if b, ok := n.otherBuckets[string(name)]; ok {
+		n.Unlock()
 		return b, nil
 	}
 	b := newBucket(n.store, mergeBytes(n.prefix, []byte{nsOtherBucketPrefix}, name), n.chunk)

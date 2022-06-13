@@ -26,20 +26,24 @@ type Api struct {
 	ns     pkg.Namespace
 	fav    pkg.Bucket
 	config *common.Config
+
+	cookieAcceptor common.CookieAcceptor
+	qrCancel       context.CancelFunc
 }
 
 // New Api instance using and db ns config
-func New(ctx context.Context, ns pkg.Namespace, config *common.Config) *Api {
+func New(ctx context.Context, ns pkg.Namespace, config *common.Config, ca common.CookieAcceptor) *Api {
 	fav, err := ns.CreateBucket([]byte(common.WeiboFavIndexBucket))
 	if err != nil {
 		panic(err)
 	}
 
 	return &Api{
-		ctx:    ctx,
-		fav:    fav,
-		ns:     ns,
-		config: config,
+		ctx:            ctx,
+		fav:            fav,
+		ns:             ns,
+		config:         config,
+		cookieAcceptor: ca,
 	}
 }
 
@@ -49,6 +53,7 @@ func (a *Api) Serve() error {
 	r.HandleFunc(uriDocList, a.ListHandler)
 	r.HandleFunc(uriImage+"/{id}", a.ImageHandler).Methods("GET")
 	r.HandleFunc(uriVideo+"/{id}", a.VideoHandler).Methods("GET")
+	r.HandleFunc("/api/qrcode", a.QRCodeHandler).Methods("GET")
 	r.HandleFunc(uriDocUpdateSettings, a.SettingsHandler).Methods("GET", "POST")
 
 	handler := AssetHandler("/", "build")
