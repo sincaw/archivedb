@@ -8,10 +8,6 @@ import (
 	"net/http"
 )
 
-var (
-	ErrStatus = fmt.Errorf("error status code")
-)
-
 type HttpCli struct {
 	http.Client
 
@@ -52,7 +48,7 @@ func (h *HttpCli) do(method, url string, data []byte) ([]byte, error) {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, ErrStatus
+		return nil, fmt.Errorf("fail with status code %d, url %q", resp.StatusCode, url)
 	}
 	defer resp.Body.Close()
 	return ioutil.ReadAll(resp.Body)

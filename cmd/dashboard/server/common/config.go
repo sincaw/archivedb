@@ -210,7 +210,6 @@ func (q VideoQuality) Get(content []byte) (url string, err error) {
 		return list[i].PlayInfo.Width > list[j].PlayInfo.Width
 	})
 
-	fmt.Printf("video %+v\n", list)
 	switch q {
 	case VideoQualityBest:
 		return list[0].PlayInfo.Url, nil

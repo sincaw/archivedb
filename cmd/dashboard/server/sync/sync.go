@@ -153,7 +153,7 @@ func (s *Sync) syncOnce() {
 			stop, err := s.saveTweet(it)
 			if err != nil {
 				logger.Error(err)
-				return
+				continue
 			}
 			if stop {
 				return
@@ -174,14 +174,6 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 	l := logger.With("weibo id", string(key))
 	l.Debugf("process weibo id %q", string(key))
 
-	defer func() {
-		if err != nil {
-			l.Errorf("fail with err %v", err)
-		} else {
-			l.Debug("done")
-		}
-	}()
-
 	yes, err := doc.Exists(key)
 	if err != nil {
 		return
@@ -201,6 +193,7 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 	l.Debug("get images")
 	images, err := GetImages(s.httpCli, urls)
 	if err != nil {
+		l.Errorf("get images fail: %v", err)
 		return
 	}
 	for n, img := range images {
@@ -308,7 +301,8 @@ func GetImages(cli *common.HttpCli, rcs map[string]resource) (pkg.Resources, err
 		eg.Go(func() error {
 			resp, err := cli.Get(url)
 			if err != nil {
-				return err
+				logger.Errorf("ignore, get image fail: %v", err)
+				return nil
 			}
 			mu.Lock()
 			rc[n] = resp
@@ -319,7 +313,7 @@ func GetImages(cli *common.HttpCli, rcs map[string]resource) (pkg.Resources, err
 	return rc, eg.Wait()
 }
 
-func  FetchLongTextIfNeeded(cli *common.HttpCli, item pkg.Item) error {
+func FetchLongTextIfNeeded(cli *common.HttpCli, item pkg.Item) error {
 	item = utils.OriginTweet(item)
 	if _, ok := item["continue_tag"]; !ok {
 		return nil
