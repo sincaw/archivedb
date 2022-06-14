@@ -60,6 +60,8 @@ type Bucket interface {
 	Delete(key []byte) error
 	// Range returns iterator for [beginKey, endKey), all for nil, nil
 	Range(beginKey, endKey []byte, reverse bool) (Iterator, error)
+	// Count returns item count of [beginKey, endKey), all for nil, nil
+	Count(beginKey, endKey []byte) (int, error)
 }
 
 type DocBucket interface {

@@ -9,6 +9,11 @@ import {Settings} from "./components/Settings";
 
 const {Header, Content, Footer} = Layout;
 
+interface IListProps {
+  total: number
+  data: ITweetProps[]
+}
+
 export const App: React.FunctionComponent = () => {
   return (
     <Layout>
@@ -37,7 +42,7 @@ export const App: React.FunctionComponent = () => {
 };
 
 const Weibo: React.FunctionComponent = () => {
-  const [data, updateData] = useState<ITweetProps[]>([]);
+  const [data, updateData] = useState<IListProps>({data: [], total: 0});
   const [searchParams, setSearchParams] = useSearchParams();
 
   const pageKey = 'page'
@@ -46,19 +51,19 @@ const Weibo: React.FunctionComponent = () => {
     [searchParams]
   )
 
+  const limit = 10
   useEffect(() => {
     window.scrollTo(0, 0)
   }, [data])
 
 
   useEffect(() => {
-    const limit = 10
     const p = getCurrentPage()
 
     async function fetch() {
       try {
         const {data} = await axios.get(`/api/list?limit=${limit}&offset=${(p - 1) * limit}`);
-        updateData(data.data);
+        updateData(data);
       } catch (e) {
       }
     }
@@ -67,10 +72,10 @@ const Weibo: React.FunctionComponent = () => {
   }, [searchParams, getCurrentPage])
 
   return <div style={{margin: '0 auto', width: 820}}>
-    {data.map(item => <Tweet key={item.mid} data={item}/>)}
+    {data.data.map(item => <Tweet key={item.mid} data={item}/>)}
     <Pagination
       defaultCurrent={getCurrentPage()}
-      total={500}
+	  total={data.total}
       showSizeChanger={false}
       style={{margin: '0 auto', width: 500}}
       onChange={(p, _)=>setSearchParams({page: p.toString()})}

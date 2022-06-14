@@ -32,6 +32,9 @@ export interface ITweetProps {
 }
 
 const renderTweetHead = (tweet: ITweetProps) => {
+  if (!tweet.user) {
+    return null
+  }
   const tweetHref = `https://weibo.com/${tweet.user.id}/${tweet.mblogid}`
   const userHref = `https://weibo.com/u/${tweet.user.id}`
   return <div style={{padding: 10}}>
@@ -52,7 +55,10 @@ const getImages = (tweet: ITweetProps): IImageProps[] => {
   if (tweet.retweeted_status) {
     tweet = tweet.retweeted_status
   }
-  return tweet.pic_ids.map((id): IImageProps | undefined => {
+  if (!tweet.pic_ids) {
+    return []
+  }
+  return tweet.pic_ids?.map((id): IImageProps | undefined => {
     if (id in tweet.archiveImages) {
       return {
         thumbnail: `/api/image/${id}-thumb.jpg`,
@@ -73,6 +79,7 @@ const renderImages = (tweet: ITweetProps) => {
   }
   return <Image.PreviewGroup>
     {images.map(img => <Image
+	  key={img.origin}
       width={width}
       src={images.length === 1 ? img.origin : img.thumbnail}
       preview={{src: img.origin}}

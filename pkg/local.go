@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/dgraph-io/badger/v3"
 	"go.mongodb.org/mongo-driver/bson"
@@ -227,6 +228,8 @@ type bucket struct {
 	store  *badger.DB
 	chunk  *bucket
 	prefix []byte
+
+	count int32
 }
 
 func newBucket(store *badger.DB, prefix []byte, chunk *bucket) *bucket {
@@ -307,6 +310,8 @@ func (b *bucket) Put(key, val []byte, opts ...PutOption) error {
 }
 
 func (b *bucket) put(key, val []byte) error {
+	// invalid count cache
+	atomic.StoreInt32(&b.count, 0)
 	return b.store.Update(func(txn *badger.Txn) error {
 		return txn.Set(b.key(key), val)
 	})
@@ -374,6 +379,29 @@ func (b *bucket) Range(begin, end []byte, reverse bool) (Iterator, error) {
 		panic("not implemented")
 	}
 	return b.find(Query{}, reverse)
+}
+
+func (b *bucket) Count(begin, end []byte) (int, error) {
+	// return cached count
+	count := atomic.LoadInt32(&b.count)
+	if count > 0 {
+		return int(count), nil
+	}
+
+	it, err := b.Range(begin, end, false)
+	if err != nil {
+		return 0, err
+	}
+	defer it.Release()
+	for it.Next() {
+		count += 1
+	}
+	if it.Err() != nil {
+		return 0, it.Err()
+	}
+
+	atomic.StoreInt32(&b.count, count)
+	return int(count), nil
 }
 
 func unpackValue(val []byte) ([]byte, *Meta, error) {
@@ -591,7 +619,7 @@ func (i *iterator) Next() bool {
 }
 
 func (i *iterator) Key() ([]byte, error) {
-	return i.iter.Item().Key(), nil
+	return i.iter.Item().Key()[len(i.prefix):], nil
 }
 
 func (i *iterator) Value() ([]byte, error) {

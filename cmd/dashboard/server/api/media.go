@@ -89,6 +89,8 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 			responseServerError(w, err)
 			return
 		}
+
+		// TODO count if incorrect when filter enabled
 		if a.config.Server.Filter.Ignore(v) {
 			continue
 		}
@@ -103,7 +105,13 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 		items = append(items, v)
 	}
 
-	content, err := bson.MarshalExtJSON(bson.M{"data": items}, false, true)
+	total, err := a.fav.Count(nil, nil)
+	if err != nil {
+		l.Error("get total items fail ", err)
+		responseServerError(w, err)
+		return
+	}
+	content, err := bson.MarshalExtJSON(bson.M{"data": items, "total": total}, false, true)
 	if err != nil {
 		l.Error("marshal result fail ", err)
 		responseServerError(w, err)
