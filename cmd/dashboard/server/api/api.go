@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -56,6 +57,7 @@ func (a *Api) Serve() error {
 	r.HandleFunc("/api/qrcode", a.QRCodeHandler).Methods("GET")
 	r.HandleFunc(uriDocUpdateSettings, a.SettingsHandler).Methods("GET", "POST")
 
+	r.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
 	handler := AssetHandler("/", "build")
 	r.PathPrefix("/").Handler(handler)
 
