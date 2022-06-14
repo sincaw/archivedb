@@ -197,12 +197,8 @@ func (a *Api) VideoHandler(w http.ResponseWriter, r *http.Request) {
 			responseServerError(w, err)
 			return
 		}
-		_, err = w.Write(buf[:n])
-		if err != nil {
-			l.Error("write content fail: ", err)
-		} else {
-			l.Debugf("partial response %d bytes", n)
-		}
+		w.Write(buf[:n])
+		l.Debugf("partial response %d bytes", n)
 	}
 }
 
