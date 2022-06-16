@@ -19,6 +19,7 @@ export interface IArchiveImg {
 }
 
 export interface ITweetProps {
+  text: string
   text_raw: string
   mid: string
   mblogid: string
@@ -47,7 +48,7 @@ const renderTweetHead = (tweet: ITweetProps) => {
       </div>}
     />
     <Divider style={{margin: '10px 0'}}/>
-    <pre style={{whiteSpace: 'pre-wrap', padding: '5px', fontFamily: 'inherit'}}>{tweet.text_raw}</pre>
+    <pre style={{whiteSpace: 'pre-wrap', padding: '5px', fontFamily: 'inherit'}}><div dangerouslySetInnerHTML={{__html: tweet.text}} /></pre>
   </div>
 }
 
