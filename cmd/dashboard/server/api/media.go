@@ -101,7 +101,6 @@ func (a *Api) ListHandler(w http.ResponseWriter, r *http.Request) {
 		if count > (offset + limit) {
 			break
 		}
-		utils.ReplaceResources(v, uriVideo)
 		items = append(items, v)
 	}
 

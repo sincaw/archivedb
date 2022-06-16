@@ -1,18 +1,12 @@
 package utils
 
 import (
-	"fmt"
-
 	"github.com/sincaw/archivedb/pkg"
 )
 
 const (
 	retweet    = "retweeted_status"
 	PicInfoKey = "pic_infos"
-)
-
-const (
-	VideoResourceKey = "video"
 )
 
 func DocId(item pkg.Item) string {
@@ -37,12 +31,4 @@ func HasVideo(item pkg.Item) bool {
 		}
 	}
 	return false
-}
-
-func ReplaceResources(item pkg.Item, apiPrefix string) {
-	id := DocId(item)
-	if HasVideo(item) {
-		item = OriginTweet(item)
-		item[VideoResourceKey] = fmt.Sprintf("%s/%s.mp4", apiPrefix, id)
-	}
 }

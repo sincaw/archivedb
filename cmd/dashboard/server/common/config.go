@@ -12,6 +12,7 @@ import (
 
 const (
 	ExtraImagesKey = "archiveImages"
+	ExtraVideoKey  = "archiveVideo"
 )
 
 // Config for dashboard server behavior

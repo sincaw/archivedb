@@ -26,7 +26,7 @@ export interface ITweetProps {
   user: IUserProps
   visible: { listId: number }
   pic_ids: string[]
-  video?: string
+  archiveVideo?: string
   archiveImages: { [key: string]: IArchiveImg }
   retweeted_status: ITweetProps
 }
@@ -99,9 +99,9 @@ export default function Tweet({data}: { data: ITweetProps }) {
         {renderTweetHead(data.retweeted_status)}
         {renderImages(data.retweeted_status)}
       </div> : renderImages(data)}
-      {originTweet.video ?
+      {originTweet.archiveVideo ?
         <video controls width="100%">
-          <source src={originTweet.video} type="video/mp4"/>
+          <source src={`/api/video/${originTweet.archiveVideo}`} type="video/mp4"/>
         </video> : null}
     </Card>
   </div>

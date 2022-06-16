@@ -19,6 +19,10 @@ var (
 	logger = utils.Logger()
 )
 
+const (
+	FavAPI = "https://weibo.com/ajax/favorites/all_fav?uid=%s&page=%d"
+)
+
 type Sync struct {
 	ctx context.Context
 
@@ -119,7 +123,7 @@ func (s *Sync) syncOnce() {
 
 	for {
 		logger.Infof("page %d", page)
-		url := fmt.Sprintf("https://weibo.com/ajax/favorites/all_fav?uid=%s&page=%d", s.config.Uid, page)
+		url := fmt.Sprintf(FavAPI, s.config.Uid, page)
 		resp, err := s.httpCli.Get(url)
 		if err != nil {
 			logger.Error(err)
@@ -209,6 +213,8 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 		return
 	}
 
+	t := utils.OriginTweet(it)
+
 	if !yes {
 		video, err := FetchVideoIfNeeded(s.httpCli, it, s.config.ContentTypes.VideoQuality)
 		if err != nil {
@@ -220,6 +226,7 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 			if err != nil {
 				return false, err
 			}
+			t[common.ExtraVideoKey] = fmt.Sprintf("%s.mp4", string(key))
 		}
 	}
 
@@ -227,7 +234,6 @@ func (s *Sync) saveTweet(it pkg.Item) (stop bool, err error) {
 	if err != nil {
 		logger.Error(err)
 	}
-	t := utils.OriginTweet(it)
 	t[common.ExtraImagesKey] = urls
 	err = doc.PutDoc(key, it)
 	if err != nil {
