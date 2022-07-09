@@ -74,7 +74,8 @@ const Weibo: React.FunctionComponent = () => {
   return <div style={{margin: '0 auto', width: 820}}>
     {data.data.map(item => <Tweet key={item.mid} data={item}/>)}
     <Pagination
-      defaultCurrent={getCurrentPage()}
+      defaultCurrent={1}
+      current={getCurrentPage()}
 	  total={data.total}
       showSizeChanger={false}
       style={{margin: '0 auto', width: 500}}
