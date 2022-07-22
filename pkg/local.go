@@ -192,6 +192,9 @@ func (n *ns) loadMetas() error {
 	}
 	buckets := make([]string, 0)
 	err = json.Unmarshal(content, &buckets)
+	if err != nil {
+		return err
+	}
 	n.Lock()
 	for _, b := range buckets {
 		if _, ok := n.otherBuckets[b]; !ok {
@@ -359,7 +362,13 @@ func (b *bucket) Delete(key []byte) (err error) {
 			return err
 		}
 		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
 		_, meta, err := unpackValue(val)
+		if err != nil {
+			return err
+		}
 		if meta == nil || len(meta.Chunks) == 0 {
 			return txn.Delete(b.key(key))
 		}
@@ -534,6 +543,9 @@ func (b *bucket) GetMeta(key []byte) (meta *Meta, err error) {
 			return err
 		}
 		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
 		_, meta, err = unpackValue(val)
 		return err
 	})
