@@ -1,7 +1,7 @@
 # ArchiveDB
 
 
-![workflow](https://github.com/jialeicui/archivedb/actions/workflows/go.yml/badge.svg)
+![workflow](https://github.com/jialeicui/archivedb/actions/workflows/go.yml/badge.svg)[![Go Report Card](https://goreportcard.com/badge/github.com/sincaw/archivedb)](https://goreportcard.com/report/github.com/sincaw/archivedb)
 
 
 ## archive demo
@@ -26,6 +26,3 @@ cd ui
 yarn && yarn start
 ```
 
-![demo](cmd/dashboard/images/demo.png)
-
-favicon from : https://www.iconfont.cn/ outline-archive-tick
