@@ -28,7 +28,7 @@ func (a *Api) SettingsHandler(w http.ResponseWriter, r *http.Request) {
 			responseServerError(w, err)
 			return
 		}
-		content, err = a.updateCurrentSettings(content)
+		_, err = a.updateCurrentSettings(content)
 		if err != nil {
 			responseServerError(w, err)
 			return

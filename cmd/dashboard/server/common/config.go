@@ -50,6 +50,15 @@ type ContentTypes struct {
 	VideoQuality VideoQuality `yaml:"videoQuality" json:"videoQuality"`
 }
 
+type ChannelConf struct {
+	// starting page for sync job
+	StartPage int `yaml:"startPage" json:"startPage"`
+	// sync job stops immediately when it meets existing tweet id when IncrementalMode set to true
+	IncrementalMode bool `yaml:"incrementalMode" json:"incrementalMode"`
+	// content fetching behavior
+	ContentTypes ContentTypes `yaml:"contentTypes" json:"contentTypes"`
+}
+
 // SyncerConfig for sync task
 type SyncerConfig struct {
 	// weibo uid
@@ -59,12 +68,10 @@ type SyncerConfig struct {
 	// crontab like string, for sync job run schedule
 	Cron string `yaml:"cron" json:"cron"`
 
-	// starting page for sync job
-	StartPage int `yaml:"startPage" json:"startPage"`
-	// sync job stops immediately when it meets existing tweet id when IncrementalMode set to true
-	IncrementalMode bool `yaml:"incrementalMode" json:"incrementalMode"`
-	// content fetching behavior
-	ContentTypes ContentTypes `yaml:"contentTypes" json:"contentTypes"`
+	// my favorite channel config
+	Favorite ChannelConf `yaml:"favorite" json:"favorite"`
+	// user channel config
+	User map[string]ChannelConf `yaml:"user" json:"user"`
 }
 
 // WebServerConfig for api server
@@ -255,4 +262,25 @@ func (f *Filter) Ignore(item pkg.Item) (yes bool) {
 
 	// TODO reduce filter action when item is no retweet
 	return filterWord(utils.TextRaw(utils.OriginTweet(item)))
+}
+
+func ValidateSyncerConfig(config SyncerConfig) (err error) {
+	validate := func(c ChannelConf) (err error) {
+		if err = c.ContentTypes.ImageQuality.Valid(); err != nil {
+			return
+		}
+		if err = c.ContentTypes.VideoQuality.Valid(); err != nil {
+			return
+		}
+		return nil
+	}
+	if err = validate(config.Favorite); err != nil {
+		return
+	}
+	for _, c := range config.User {
+		if err = validate(c); err != nil {
+			return
+		}
+	}
+	return nil
 }
